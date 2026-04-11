@@ -3,87 +3,52 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 
 const CANVAS_HEIGHT = 200;
-const GROUND_Y = 160;
-const GRAVITY = 0.6;
-const JUMP_FORCE = -11;
-const GAME_SPEED_INIT = 4;
-const GAME_SPEED_INC = 0.001;
-const OBSTACLE_GAP_MIN = 80;
-const OBSTACLE_GAP_MAX = 200;
+const GROUND_Y = 165;
+const GRAVITY = 0.7;
+const JUMP_FORCE = -11.5;
+const GAME_SPEED_INIT = 5;
+const GAME_SPEED_INC = 0.002;
+const OBSTACLE_GAP_MIN = 60;
+const OBSTACLE_GAP_MAX = 160;
 
-// Pixel size for drawing sprites
-const PX = 2;
+const PLAYER_SIZE = 26;
+const PLAYER_X = 80;
 
 interface Obstacle {
   x: number;
   width: number;
   height: number;
-  type: "tnt" | "cactus" | "creeper";
+  type: "spike" | "pillar" | "double_spike";
 }
 
-// ── Minecraft pixel sprites (each row is a string, chars map to colors) ──
-
-// Steve head+body (12x16 px → 24x32 on canvas at PX=2)
-const STEVE_SPRITE = [
-  // Hair (row 0-1)
-  "..4444444...",
-  "..4444444...",
-  // Head (row 2-7)
-  ".44S4SS44S.",
-  ".4SSSSSSS4.",
-  ".4SWSSSWSS.",
-  ".4SSSNSSSS.",
-  ".4SSMMMSS4.",
-  "..4SSSSS4..",
-  // Neck/body (row 8)
-  "...00000...",
-  // Shirt (row 9-12)
-  "..00088000.",
-  ".0000880000",
-  ".0000880000",
-  "..00000000.",
-  // Arms+body
-  "..0SSSS0...",
-  // Legs (row 14-15)
-  "...11.11...",
-  "...11.11...",
-];
-
-const STEVE_COLORS: Record<string, string> = {
-  "4": "#3b2213",  // hair brown
-  "S": "#c8a07e",  // skin
-  "W": "#ffffff",  // eye white
-  "N": "#5c4033",  // nose
-  "M": "#8b6053",  // mouth
-  "0": "#3ab3da",  // shirt cyan
-  "8": "#2d8bba",  // shirt dark
-  "1": "#2b2b8b",  // pants indigo
-};
-
-// Grass block top colors
-const GRASS_TOP = "#5d9b3a";
-const GRASS_TOP_LIGHT = "#6db344";
-const DIRT = "#8b6941";
-const DIRT_DARK = "#7a5a35";
-const DIRT_SPEC = "#9e7a52";
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  color: string;
+}
 
 export function MineRunner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef({
-    playerY: GROUND_Y - 32,
+    playerY: GROUND_Y - PLAYER_SIZE,
     velocityY: 0,
     isJumping: false,
+    rotation: 0,
+    targetRotation: 0,
     obstacles: [] as Obstacle[],
+    particles: [] as Particle[],
     score: 0,
     gameSpeed: GAME_SPEED_INIT,
     frameCount: 0,
-    nextObstacleIn: 120,
+    nextObstacleIn: 80,
     gameOver: false,
     started: false,
-    stars: [] as { x: number; y: number; size: number; twinkle: number }[],
-    clouds: [] as { x: number; y: number; w: number }[],
     groundOffset: 0,
-    walkFrame: 0,
+    bgShapes: [] as { x: number; y: number; size: number; speed: number; rot: number }[],
+    pulse: 0,
   });
   const animRef = useRef<number>(0);
   const [highScore, setHighScore] = useState(0);
@@ -91,14 +56,17 @@ export function MineRunner() {
   const jump = useCallback(() => {
     const g = gameRef.current;
     if (g.gameOver) {
-      g.playerY = GROUND_Y - 32;
+      g.playerY = GROUND_Y - PLAYER_SIZE;
       g.velocityY = 0;
       g.isJumping = false;
+      g.rotation = 0;
+      g.targetRotation = 0;
       g.obstacles = [];
+      g.particles = [];
       g.score = 0;
       g.gameSpeed = GAME_SPEED_INIT;
       g.frameCount = 0;
-      g.nextObstacleIn = 120;
+      g.nextObstacleIn = 80;
       g.gameOver = false;
       g.started = true;
       return;
@@ -109,6 +77,7 @@ export function MineRunner() {
     if (!g.isJumping) {
       g.velocityY = JUMP_FORCE;
       g.isJumping = true;
+      g.targetRotation += Math.PI / 2; // 90° rotation per jump like GD
     }
   }, []);
 
@@ -120,329 +89,305 @@ export function MineRunner() {
 
     const g = gameRef.current;
 
-    // Init stars
-    if (g.stars.length === 0) {
-      for (let i = 0; i < 50; i++) {
-        g.stars.push({
-          x: Math.random() * 800,
-          y: Math.random() * (GROUND_Y - 30),
-          size: Math.random() > 0.7 ? 2 : 1,
-          twinkle: Math.random() * Math.PI * 2,
+    // Init background geometric shapes
+    if (g.bgShapes.length === 0) {
+      for (let i = 0; i < 12; i++) {
+        g.bgShapes.push({
+          x: Math.random() * 900,
+          y: 20 + Math.random() * (GROUND_Y - 60),
+          size: 10 + Math.random() * 30,
+          speed: 0.3 + Math.random() * 0.8,
+          rot: Math.random() * Math.PI * 2,
         });
       }
     }
 
-    // Init clouds
-    if (g.clouds.length === 0) {
-      for (let i = 0; i < 4; i++) {
-        g.clouds.push({
-          x: Math.random() * 800,
-          y: 20 + Math.random() * 50,
-          w: 40 + Math.random() * 60,
-        });
-      }
-    }
-
-    const PLAYER_W = 24;
-    const PLAYER_H = 32;
-    const PLAYER_X = 60;
-
-    // ── Draw a pixel sprite ──
-    function drawSprite(
-      sprite: string[],
-      colors: Record<string, string>,
-      sx: number,
-      sy: number,
-      px: number = PX,
-    ) {
-      if (!ctx) return;
-      for (let row = 0; row < sprite.length; row++) {
-        for (let col = 0; col < sprite[row].length; col++) {
-          const ch = sprite[row][col];
-          if (ch === "." || ch === " ") continue;
-          const color = colors[ch];
-          if (!color) continue;
-          ctx.fillStyle = color;
-          ctx.fillRect(sx + col * px, sy + row * px, px, px);
-        }
-      }
-    }
-
-    // ── Minecraft-style cloud (white blocky) ──
-    function drawCloud(cx: number, cy: number, w: number) {
-      if (!ctx) return;
-      const bk = 8;
-      ctx.fillStyle = "rgba(255,255,255,0.06)";
-      // Bottom row (wider)
-      const cols = Math.floor(w / bk);
-      for (let i = 0; i < cols; i++) {
-        ctx.fillRect(cx + i * bk, cy, bk - 1, bk - 1);
-      }
-      // Top row (narrower, centered)
-      const topCols = Math.max(1, cols - 2);
-      const topOff = Math.floor((cols - topCols) / 2) * bk;
-      for (let i = 0; i < topCols; i++) {
-        ctx.fillRect(cx + topOff + i * bk, cy - bk, bk - 1, bk - 1);
-      }
-    }
-
-    // ── Moon ──
-    function drawMoon() {
-      if (!ctx || !canvas) return;
-      const mx = canvas.width - 80;
-      const my = 30;
-      // Blocky moon (8x8 pixel blocks)
-      ctx.fillStyle = "#e8e0c8";
-      for (let r = 0; r < 4; r++) {
-        for (let c = 0; c < 4; c++) {
-          const dist = Math.sqrt((r - 1.5) ** 2 + (c - 1.5) ** 2);
-          if (dist < 2.2) {
-            ctx.fillRect(mx + c * 6, my + r * 6, 5, 5);
-          }
-        }
-      }
-      // Craters
-      ctx.fillStyle = "#c8c0a8";
-      ctx.fillRect(mx + 6, my + 6, 5, 5);
-      ctx.fillRect(mx + 12, my + 12, 5, 5);
-    }
+    // ── Colors ──
+    const NEON = "#10b981";
+    const NEON_BRIGHT = "#34d399";
+    const NEON_DIM = "#065f46";
+    const SPIKE_COLOR = "#ef4444";
+    const SPIKE_BRIGHT = "#f87171";
+    const PILLAR_COLOR = "#3b82f6";
+    const PILLAR_BRIGHT = "#60a5fa";
 
     // ── Background ──
     function drawBackground() {
       if (!ctx || !canvas) return;
-      // Sky gradient (dark navy)
-      const grad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
-      grad.addColorStop(0, "#0c0c1e");
-      grad.addColorStop(1, "#0f1a2e");
+      // Dark gradient
+      const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+      grad.addColorStop(0, "#050510");
+      grad.addColorStop(0.6, "#0a0a20");
+      grad.addColorStop(1, "#0d0d1a");
       ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvas.width, GROUND_Y);
+      ctx.fillRect(0, 0, canvas.width, CANVAS_HEIGHT);
 
-      // Stars
-      for (const star of g.stars) {
-        star.twinkle += 0.015;
-        const alpha = 0.2 + Math.sin(star.twinkle) * 0.3;
-        ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-        ctx.fillRect(Math.floor(star.x), Math.floor(star.y), star.size, star.size);
-      }
+      // Scrolling background shapes (diamonds/squares)
+      g.pulse += 0.02;
+      const pulseAlpha = 0.03 + Math.sin(g.pulse) * 0.015;
 
-      // Moon
-      drawMoon();
-
-      // Clouds (scroll slowly)
-      for (const cloud of g.clouds) {
-        drawCloud(cloud.x, cloud.y, cloud.w);
+      for (const shape of g.bgShapes) {
         if (g.started && !g.gameOver) {
-          cloud.x -= g.gameSpeed * 0.15;
-          if (cloud.x + cloud.w < -10) {
-            cloud.x = canvas.width + 20;
-            cloud.y = 20 + Math.random() * 50;
+          shape.x -= g.gameSpeed * shape.speed;
+          shape.rot += 0.005;
+          if (shape.x + shape.size < -10) {
+            shape.x = canvas.width + 20 + Math.random() * 100;
+            shape.y = 20 + Math.random() * (GROUND_Y - 60);
           }
         }
+        ctx.save();
+        ctx.translate(shape.x + shape.size / 2, shape.y + shape.size / 2);
+        ctx.rotate(shape.rot);
+        ctx.strokeStyle = `rgba(16, 185, 129, ${pulseAlpha})`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-shape.size / 2, -shape.size / 2, shape.size, shape.size);
+        ctx.restore();
       }
 
-      // ── Ground: Grass block layer + dirt ──
-      const blockW = 16;
+      // ── Ground ──
+      const blockW = 30;
       const offset = Math.floor(g.groundOffset) % blockW;
 
-      // Grass top (2px bright green line)
-      ctx.fillStyle = GRASS_TOP;
-      ctx.fillRect(0, GROUND_Y, canvas.width, 4);
-      // Grass highlight pixels
-      ctx.fillStyle = GRASS_TOP_LIGHT;
+      // Ground glow line
+      ctx.shadowColor = NEON;
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = NEON;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(canvas.width, GROUND_Y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Ground fill
+      ctx.fillStyle = "#0a0f1a";
+      ctx.fillRect(0, GROUND_Y, canvas.width, CANVAS_HEIGHT - GROUND_Y);
+
+      // Ground grid lines
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.08)";
+      ctx.lineWidth = 1;
+      // Vertical
       for (let x = -offset; x < canvas.width + blockW; x += blockW) {
-        ctx.fillRect(x + 2, GROUND_Y, 4, 2);
-        ctx.fillRect(x + 10, GROUND_Y, 3, 2);
-        // Grass overhang
-        ctx.fillStyle = GRASS_TOP;
-        if (Math.floor(x / blockW) % 3 === 0) {
-          ctx.fillRect(x + 4, GROUND_Y - 2, 2, 2);
-        }
-        ctx.fillStyle = GRASS_TOP_LIGHT;
+        ctx.beginPath();
+        ctx.moveTo(x, GROUND_Y);
+        ctx.lineTo(x, CANVAS_HEIGHT);
+        ctx.stroke();
       }
-
-      // Dirt body
-      ctx.fillStyle = DIRT;
-      ctx.fillRect(0, GROUND_Y + 4, canvas.width, CANVAS_HEIGHT - GROUND_Y - 4);
-
-      // Dirt texture pattern
-      for (let x = -offset; x < canvas.width + blockW; x += blockW) {
-        // Grid lines (darker)
-        ctx.fillStyle = DIRT_DARK;
-        ctx.fillRect(x, GROUND_Y + 4, 1, CANVAS_HEIGHT - GROUND_Y - 4);
-        // Specks
-        ctx.fillStyle = DIRT_SPEC;
-        ctx.fillRect(x + 4, GROUND_Y + 8, 2, 2);
-        ctx.fillRect(x + 10, GROUND_Y + 14, 2, 2);
-        ctx.fillRect(x + 7, GROUND_Y + 22, 2, 1);
-        // Darker specks
-        ctx.fillStyle = DIRT_DARK;
-        ctx.fillRect(x + 2, GROUND_Y + 18, 2, 2);
-        ctx.fillRect(x + 12, GROUND_Y + 10, 1, 2);
+      // Horizontal
+      for (let y = GROUND_Y + blockW; y < CANVAS_HEIGHT; y += blockW) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
       }
     }
 
-    // ── Player (Steve) ──
+    // ── Particles ──
+    function spawnTrailParticle() {
+      if (!g.started || g.gameOver) return;
+      g.particles.push({
+        x: PLAYER_X + PLAYER_SIZE / 2,
+        y: g.playerY + PLAYER_SIZE,
+        vx: -1 - Math.random() * 2,
+        vy: -0.5 + Math.random(),
+        life: 1.0,
+        color: NEON,
+      });
+    }
+
+    function spawnDeathParticles() {
+      for (let i = 0; i < 20; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 4;
+        g.particles.push({
+          x: PLAYER_X + PLAYER_SIZE / 2,
+          y: g.playerY + PLAYER_SIZE / 2,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1.0,
+          color: i % 2 === 0 ? NEON_BRIGHT : "#ffffff",
+        });
+      }
+    }
+
+    function updateParticles() {
+      for (const p of g.particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.03;
+      }
+      g.particles = g.particles.filter((p) => p.life > 0);
+    }
+
+    function drawParticles() {
+      if (!ctx) return;
+      for (const p of g.particles) {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        const size = 3 * p.life;
+        ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ── Player (GD-style cube with creeper face) ──
     function drawPlayer() {
       if (!ctx) return;
-      const x = PLAYER_X;
-      const y = g.playerY;
+      const cx = PLAYER_X + PLAYER_SIZE / 2;
+      const cy = g.playerY + PLAYER_SIZE / 2;
 
-      drawSprite(STEVE_SPRITE, STEVE_COLORS, x, y, PX);
+      // Smooth rotation towards target
+      const rotDiff = g.targetRotation - g.rotation;
+      g.rotation += rotDiff * 0.15;
 
-      // Walking animation: slight leg swap
-      if (g.started && !g.gameOver && !g.isJumping) {
-        g.walkFrame++;
-        if (Math.floor(g.walkFrame / 6) % 2 === 0) {
-          // Swap leg colors slightly
-          ctx.fillStyle = "#3a3a9b";
-          ctx.fillRect(x + 6, y + 28, 4, 4);
-        }
-      }
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(g.rotation);
+
+      const half = PLAYER_SIZE / 2;
+
+      // Outer glow
+      ctx.shadowColor = NEON;
+      ctx.shadowBlur = g.gameOver ? 0 : 14;
+
+      // Cube body
+      ctx.fillStyle = NEON;
+      ctx.fillRect(-half, -half, PLAYER_SIZE, PLAYER_SIZE);
+
+      // Inner darker square
+      ctx.fillStyle = NEON_DIM;
+      ctx.fillRect(-half + 3, -half + 3, PLAYER_SIZE - 6, PLAYER_SIZE - 6);
+
+      // Bright inner
+      ctx.fillStyle = NEON;
+      ctx.fillRect(-half + 5, -half + 5, PLAYER_SIZE - 10, PLAYER_SIZE - 10);
+
+      ctx.shadowBlur = 0;
+
+      // Creeper face on the cube
+      const fPx = PLAYER_SIZE / 8;
+      ctx.fillStyle = "#052e16";
+      // Eyes
+      ctx.fillRect(-half + fPx * 1, -half + fPx * 1.5, fPx * 2, fPx * 2);
+      ctx.fillRect(-half + fPx * 5, -half + fPx * 1.5, fPx * 2, fPx * 2);
+      // Mouth
+      ctx.fillRect(-half + fPx * 3, -half + fPx * 3.5, fPx * 2, fPx * 1);
+      ctx.fillRect(-half + fPx * 2, -half + fPx * 4.5, fPx * 4, fPx * 1);
+      ctx.fillRect(-half + fPx * 2, -half + fPx * 5.5, fPx * 1.5, fPx * 1.5);
+      ctx.fillRect(-half + fPx * 4.5, -half + fPx * 5.5, fPx * 1.5, fPx * 1.5);
+
+      ctx.restore();
     }
 
     // ── Obstacles ──
     function drawObstacle(obs: Obstacle) {
       if (!ctx) return;
+      const bx = Math.floor(obs.x);
+      const by = GROUND_Y - obs.height;
 
-      if (obs.type === "tnt") {
-        // TNT: draw the sprite scaled to fit the obstacle
-        const bx = Math.floor(obs.x);
-        const by = GROUND_Y - obs.height;
-        // Red base
-        ctx.fillStyle = "#cc2200";
-        ctx.fillRect(bx, by, obs.width, obs.height);
-        // Dark border
-        ctx.fillStyle = "#8b0000";
-        ctx.fillRect(bx, by, obs.width, 2);
-        ctx.fillRect(bx, by + obs.height - 2, obs.width, 2);
-        ctx.fillRect(bx, by, 2, obs.height);
-        ctx.fillRect(bx + obs.width - 2, by, 2, obs.height);
-        // White band
-        const bandY = by + Math.floor(obs.height * 0.3);
-        const bandH = Math.floor(obs.height * 0.4);
-        ctx.fillStyle = "#e8e8e8";
-        ctx.fillRect(bx + 3, bandY, obs.width - 6, bandH);
-        // TNT text
-        ctx.fillStyle = "#222222";
-        ctx.font = `bold ${Math.max(8, Math.floor(obs.width * 0.35))}px monospace`;
-        ctx.textAlign = "center";
-        ctx.fillText("TNT", bx + obs.width / 2, bandY + bandH - 2);
+      if (obs.type === "spike" || obs.type === "double_spike") {
+        // GD-style spike triangles
+        ctx.shadowColor = SPIKE_COLOR;
+        ctx.shadowBlur = 8;
 
-      } else if (obs.type === "creeper") {
-        // Creeper enemy
-        const bx = Math.floor(obs.x);
-        const by = GROUND_Y - obs.height;
-        // Green body
-        ctx.fillStyle = "#46a832";
-        ctx.fillRect(bx, by, obs.width, obs.height);
-        // Darker border
-        ctx.fillStyle = "#2d7a1e";
-        ctx.fillRect(bx, by, obs.width, 2);
-        ctx.fillRect(bx, by, 2, obs.height);
-        ctx.fillRect(bx + obs.width - 2, by, 2, obs.height);
+        const drawSpike = (sx: number) => {
+          if (!ctx) return;
+          ctx.fillStyle = SPIKE_COLOR;
+          ctx.beginPath();
+          ctx.moveTo(sx, GROUND_Y);
+          ctx.lineTo(sx + obs.width / 2, by);
+          ctx.lineTo(sx + obs.width, GROUND_Y);
+          ctx.closePath();
+          ctx.fill();
 
-        // Face
-        const faceOff = Math.floor(obs.width * 0.15);
-        const eyeSize = Math.max(2, Math.floor(obs.width * 0.2));
-        ctx.fillStyle = "#1a1a1a";
-        // Eyes
-        ctx.fillRect(bx + faceOff, by + 4, eyeSize, eyeSize);
-        ctx.fillRect(bx + obs.width - faceOff - eyeSize, by + 4, eyeSize, eyeSize);
-        // Mouth
-        const mouthW = Math.max(2, Math.floor(obs.width * 0.25));
-        const mouthX = bx + Math.floor((obs.width - mouthW) / 2);
-        ctx.fillRect(mouthX, by + 4 + eyeSize + 1, mouthW, 3);
-        ctx.fillRect(mouthX - Math.floor(mouthW * 0.3), by + 4 + eyeSize + 4, Math.floor(mouthW * 0.5), 4);
-        ctx.fillRect(mouthX + Math.floor(mouthW * 0.8), by + 4 + eyeSize + 4, Math.floor(mouthW * 0.5), 4);
+          // Inner triangle (brighter)
+          ctx.fillStyle = SPIKE_BRIGHT;
+          const inset = 4;
+          ctx.beginPath();
+          ctx.moveTo(sx + inset, GROUND_Y - 2);
+          ctx.lineTo(sx + obs.width / 2, by + obs.height * 0.3);
+          ctx.lineTo(sx + obs.width - inset, GROUND_Y - 2);
+          ctx.closePath();
+          ctx.fill();
+        };
 
-        // Feet
-        ctx.fillStyle = "#3a9428";
-        ctx.fillRect(bx + 2, by + obs.height - 6, obs.width / 2 - 3, 6);
-        ctx.fillRect(bx + obs.width / 2 + 1, by + obs.height - 6, obs.width / 2 - 3, 6);
+        drawSpike(bx);
+        if (obs.type === "double_spike") {
+          drawSpike(bx + obs.width - 4);
+        }
+
+        ctx.shadowBlur = 0;
 
       } else {
-        // Cactus
-        const bx = Math.floor(obs.x);
-        const by = GROUND_Y - obs.height;
-        const stemW = Math.max(6, obs.width - 8);
-        const stemX = bx + Math.floor((obs.width - stemW) / 2);
+        // Pillar block
+        ctx.shadowColor = PILLAR_COLOR;
+        ctx.shadowBlur = 8;
 
-        // Main stem
-        ctx.fillStyle = "#1a7a2e";
-        ctx.fillRect(stemX, by, stemW, obs.height);
-        // Lighter stripe
-        ctx.fillStyle = "#22a038";
-        ctx.fillRect(stemX + 2, by, 2, obs.height);
-        // Dark stripe
-        ctx.fillStyle = "#0f5e1f";
-        ctx.fillRect(stemX + stemW - 2, by, 2, obs.height);
+        ctx.fillStyle = PILLAR_COLOR;
+        ctx.fillRect(bx, by, obs.width, obs.height);
 
-        // Arms
-        const armW = 4;
-        const armH = 10;
-        // Left arm
-        ctx.fillStyle = "#1a7a2e";
-        ctx.fillRect(bx, by + 8, armW, armH);
-        ctx.fillStyle = "#22a038";
-        ctx.fillRect(bx, by + 8, 2, armH);
-        ctx.fillRect(bx, by + 8, armW, 2);
-        // Right arm
-        ctx.fillStyle = "#1a7a2e";
-        ctx.fillRect(bx + obs.width - armW, by + 18, armW, armH);
-        ctx.fillStyle = "#22a038";
-        ctx.fillRect(bx + obs.width - armW, by + 18, 2, armH);
-        ctx.fillRect(bx + obs.width - armW, by + 18, armW, 2);
+        // Inner
+        ctx.fillStyle = PILLAR_BRIGHT;
+        ctx.fillRect(bx + 3, by + 3, obs.width - 6, obs.height - 6);
 
-        // Spines (dark dots)
-        ctx.fillStyle = "#0f5e1f";
-        for (let sy = by + 4; sy < by + obs.height - 4; sy += 6) {
-          ctx.fillRect(stemX - 1, sy, 1, 1);
-          ctx.fillRect(stemX + stemW, sy + 3, 1, 1);
-        }
-        // Top
-        ctx.fillStyle = "#22a038";
-        ctx.fillRect(stemX + 1, by, stemW - 2, 2);
+        ctx.fillStyle = PILLAR_COLOR;
+        ctx.fillRect(bx + 6, by + 6, obs.width - 12, obs.height - 12);
+
+        ctx.shadowBlur = 0;
       }
     }
 
     // ── Score ──
     function drawScore() {
       if (!ctx || !canvas) return;
-      ctx.fillStyle = "#6ee7b7";
+      ctx.fillStyle = NEON_BRIGHT;
       ctx.font = "bold 14px monospace";
       ctx.textAlign = "right";
-      ctx.fillText(`${Math.floor(g.score).toString().padStart(5, "0")}`, canvas.width - 12, 20);
+      ctx.fillText(`${Math.floor(g.score).toString().padStart(5, "0")}`, canvas.width - 12, 24);
       if (highScore > 0) {
-        ctx.fillStyle = "#6b7280";
+        ctx.fillStyle = "#4b5563";
         ctx.font = "11px monospace";
-        ctx.fillText(`HI ${highScore.toString().padStart(5, "0")}`, canvas.width - 12, 36);
+        ctx.fillText(`HI ${highScore.toString().padStart(5, "0")}`, canvas.width - 12, 40);
       }
+
+      // Progress bar at top
+      const progress = Math.min(g.score / 100, 1);
+      ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
+      ctx.fillRect(12, 14, canvas.width - 100, 4);
+      ctx.fillStyle = NEON;
+      ctx.fillRect(12, 14, (canvas.width - 100) * progress, 4);
+      // Percentage
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "left";
+      ctx.fillText(`${Math.floor(progress * 100)}%`, 12, 30);
     }
 
     // ── UI text ──
     function drawUI() {
       if (!ctx || !canvas) return;
       if (!g.started) {
-        ctx.fillStyle = "#6ee7b7";
-        ctx.font = "bold 14px monospace";
+        // Pulsing text
+        const alpha = 0.6 + Math.sin(Date.now() / 400) * 0.4;
+        ctx.fillStyle = `rgba(52, 211, 153, ${alpha})`;
+        ctx.font = "bold 15px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("PRESS SPACE OR TAP TO START", canvas.width / 2, GROUND_Y / 2 - 5);
-        ctx.fillStyle = "#6b7280";
+        ctx.fillText("PRESS SPACE OR TAP", canvas.width / 2, GROUND_Y / 2 - 5);
+        ctx.fillStyle = "#4b5563";
         ctx.font = "11px monospace";
-        ctx.fillText("jump over obstacles while the server loads", canvas.width / 2, GROUND_Y / 2 + 15);
+        ctx.fillText("play while the server wakes up", canvas.width / 2, GROUND_Y / 2 + 15);
       }
       if (g.gameOver) {
-        // Dark overlay
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(0, 0, canvas.width, GROUND_Y);
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width, CANVAS_HEIGHT);
 
-        ctx.fillStyle = "#ef4444";
-        ctx.font = "bold 16px monospace";
+        ctx.fillStyle = SPIKE_COLOR;
+        ctx.font = "bold 18px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("GAME OVER", canvas.width / 2, GROUND_Y / 2 - 5);
+        ctx.fillText("GAME OVER", canvas.width / 2, GROUND_Y / 2 - 8);
         ctx.fillStyle = "#6b7280";
-        ctx.font = "11px monospace";
-        ctx.fillText("tap or press space to retry", canvas.width / 2, GROUND_Y / 2 + 15);
+        ctx.font = "12px monospace";
+        ctx.fillText("tap or press space to retry", canvas.width / 2, GROUND_Y / 2 + 16);
       }
     }
 
@@ -452,26 +397,39 @@ export function MineRunner() {
 
       g.velocityY += GRAVITY;
       g.playerY += g.velocityY;
-      if (g.playerY >= GROUND_Y - PLAYER_H) {
-        g.playerY = GROUND_Y - PLAYER_H;
+      if (g.playerY >= GROUND_Y - PLAYER_SIZE) {
+        g.playerY = GROUND_Y - PLAYER_SIZE;
         g.velocityY = 0;
         g.isJumping = false;
+        // Snap rotation
+        g.rotation = g.targetRotation;
       }
 
       g.groundOffset += g.gameSpeed;
+
+      // Trail particles every 3 frames
+      if (g.frameCount % 3 === 0) {
+        spawnTrailParticle();
+      }
 
       // Spawn obstacles
       g.nextObstacleIn--;
       if (g.nextObstacleIn <= 0) {
         const roll = Math.random();
-        const type = roll < 0.35 ? "tnt" : roll < 0.65 ? "cactus" : "creeper";
+        let type: Obstacle["type"];
         let h: number, w: number;
-        if (type === "tnt") {
-          w = 28; h = 28;
-        } else if (type === "creeper") {
-          w = 20; h = 32;
+        if (roll < 0.4) {
+          type = "spike";
+          w = 24;
+          h = 28 + Math.random() * 10;
+        } else if (roll < 0.7) {
+          type = "double_spike";
+          w = 22;
+          h = 26 + Math.random() * 10;
         } else {
-          w = 18; h = 30 + Math.random() * 15;
+          type = "pillar";
+          w = 28;
+          h = 30 + Math.random() * 20;
         }
         g.obstacles.push({ x: canvas!.width + 10, width: w, height: h, type });
         g.nextObstacleIn = OBSTACLE_GAP_MIN + Math.random() * OBSTACLE_GAP_MAX;
@@ -484,24 +442,50 @@ export function MineRunner() {
 
       // Collision
       for (const obs of g.obstacles) {
-        const px = PLAYER_X;
-        const py = g.playerY;
-        const ox = obs.x;
-        const oy = GROUND_Y - obs.height;
-        if (
-          px + PLAYER_W - 4 > ox + 2 &&
-          px + 4 < ox + obs.width - 2 &&
-          py + PLAYER_H - 2 > oy + 2
-        ) {
-          g.gameOver = true;
-          setHighScore((prev) => Math.max(prev, Math.floor(g.score)));
-          return;
+        const px = PLAYER_X + 4;
+        const py = g.playerY + 4;
+        const pw = PLAYER_SIZE - 8;
+        const ph = PLAYER_SIZE - 8;
+
+        if (obs.type === "spike" || obs.type === "double_spike") {
+          // Triangle collision — check if player overlaps spike area
+          const spikeTop = GROUND_Y - obs.height;
+          const spikeCx = obs.x + obs.width / 2;
+          if (
+            px + pw > obs.x + 4 &&
+            px < obs.x + obs.width - 4 &&
+            py + ph > spikeTop + obs.height * 0.3
+          ) {
+            // More precise: check if bottom of player is within the triangle width at that height
+            const playerBottom = py + ph;
+            const heightInSpike = GROUND_Y - playerBottom;
+            const widthAtHeight = (heightInSpike / obs.height) * obs.width;
+            const leftEdge = spikeCx - widthAtHeight / 2;
+            const rightEdge = spikeCx + widthAtHeight / 2;
+            if (px + pw > leftEdge + 2 && px < rightEdge - 2) {
+              g.gameOver = true;
+              spawnDeathParticles();
+              setHighScore((prev) => Math.max(prev, Math.floor(g.score)));
+              return;
+            }
+          }
+        } else {
+          // Box collision for pillars
+          const oy = GROUND_Y - obs.height;
+          if (px + pw > obs.x + 3 && px < obs.x + obs.width - 3 && py + ph > oy + 3) {
+            g.gameOver = true;
+            spawnDeathParticles();
+            setHighScore((prev) => Math.max(prev, Math.floor(g.score)));
+            return;
+          }
         }
       }
 
       g.score += 0.15;
       g.gameSpeed += GAME_SPEED_INC;
       g.frameCount++;
+
+      updateParticles();
     }
 
     // ── Game loop ──
@@ -509,6 +493,7 @@ export function MineRunner() {
       if (!ctx || !canvas) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBackground();
+      drawParticles();
       for (const obs of g.obstacles) drawObstacle(obs);
       drawPlayer();
       drawScore();
@@ -543,13 +528,12 @@ export function MineRunner() {
   }, [jump, highScore]);
 
   return (
-    <div className="rounded-xl border border-white/[0.06] overflow-hidden bg-[#0a0a14]">
+    <div className="rounded-xl border border-emerald-500/20 overflow-hidden bg-[#050510]" style={{ boxShadow: "0 0 20px rgba(16,185,129,0.1)" }}>
       <canvas
         ref={canvasRef}
         height={CANVAS_HEIGHT}
         onClick={jump}
         className="w-full cursor-pointer"
-        style={{ imageRendering: "pixelated" }}
       />
     </div>
   );
