@@ -27,10 +27,12 @@ def detect_silence(
     silences = []
     prev_end = 0.0
     for region in regions:
-        gap = region.meta.start - prev_end
+        r_start = region.start if region.start is not None else prev_end
+        r_end = region.end if hasattr(region, 'end') and region.end is not None else r_start + region.duration
+        gap = r_start - prev_end
         if gap >= min_silence_duration:
-            silences.append(SilenceSegment(start=prev_end, end=region.meta.start))
-        prev_end = region.meta.end
+            silences.append(SilenceSegment(start=prev_end, end=r_start))
+        prev_end = r_end
 
     return silences
 

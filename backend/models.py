@@ -28,6 +28,7 @@ class StylePreset(str, Enum):
 class ProjectStatus(str, Enum):
     CREATED = "created"
     UPLOADING = "uploading"
+    UPLOADED = "uploaded"
     ANALYZING = "analyzing"
     PLANNING = "planning"
     COMPOSING = "composing"
