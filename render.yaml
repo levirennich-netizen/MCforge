@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: mcforge-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: XAI_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: '["https://frontend-delta-six-63.vercel.app","http://localhost:3000"]'
+      - key: DATA_DIR
+        value: /app/data
+      - key: PORT
+        value: "8000"
