@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { getProject, listClips, uploadClip, startAnalysis, getAnalysis, generatePlan, getHighlights } from "@/lib/api";
+import { getProject, listClips, uploadClip, startAnalysis, getAnalysis, generatePlan, getHighlights, startAutoEdit, listExports, getExportDownloadUrl } from "@/lib/api";
+import type { ExportRecord } from "@/types/api";
 import { useProjectStore } from "@/stores/project-store";
 import { useJobProgress } from "@/lib/sse";
 import { toast, catchToast } from "@/lib/toast";
@@ -36,6 +37,7 @@ export default function ProjectPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [exports, setExports] = useState<ExportRecord[]>([]);
 
   useJobProgress(projectId);
 
@@ -44,6 +46,7 @@ export default function ProjectPage() {
     listClips(projectId).then(setClips).catch(catchToast("Failed to load clips"));
     getAnalysis(projectId).then(setAnalyses).catch(() => {});
     getHighlights(projectId).then(setHighlights).catch(() => {});
+    listExports(projectId).then(setExports).catch(() => {});
   }, [projectId]);
 
   const handleUpload = useCallback(async (files: FileList | File[]) => {
@@ -81,6 +84,24 @@ export default function ProjectPage() {
       toast.error("Failed to start plan generation");
     }
   };
+
+  const handleAutoEdit = async () => {
+    try {
+      await startAutoEdit(projectId, project?.style_preset || "high_energy", "1080p");
+      toast.info("AI is making your video...");
+    } catch {
+      toast.error("Failed to start auto-edit");
+    }
+  };
+
+  // Refresh exports when auto_edit job completes
+  const autoEditJob = Object.values(activeJobs).find((j) => j.stage === "auto_edit");
+  useEffect(() => {
+    if (autoEditJob?.status === "completed") {
+      listExports(projectId).then(setExports).catch(() => {});
+      toast.success("Your video is ready!");
+    }
+  }, [autoEditJob?.status, projectId]);
 
   const handleStepClick = (key: string) => {
     if (key === "upload") return;
@@ -178,8 +199,43 @@ export default function ProjectPage() {
 
         {/* Actions Panel */}
         <div className="space-y-4">
+          {/* Big AI Make Video button */}
+          <Card padding="md" className="!border-emerald-500/30 !bg-emerald-500/5">
+            <Button
+              onClick={handleAutoEdit}
+              disabled={clips.length === 0 || hasRunningJobs}
+              size="lg"
+              className="w-full !text-lg !py-4 !from-emerald-500 !to-green-600 hover:!from-emerald-400 hover:!to-green-500 !shadow-[0_2px_8px_rgba(0,0,0,0.3),0_0_20px_rgba(16,185,129,0.25)]"
+            >
+              {hasRunningJobs ? "Working..." : "AI Make Video"}
+            </Button>
+            <p className="text-xs text-muted text-center mt-2">
+              One click — AI analyzes, edits, and exports your video
+            </p>
+          </Card>
+
+          {/* Downloads */}
+          {exports.length > 0 && (
+            <Card padding="md">
+              <h3 className="text-sm font-semibold mb-3 text-foreground/80 uppercase tracking-wider">Your Videos</h3>
+              <div className="space-y-2">
+                {exports.map((exp) => (
+                  <a
+                    key={exp.id}
+                    href={getExportDownloadUrl(projectId, exp.id)}
+                    download
+                    className="flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                  >
+                    <span className="text-sm">{exp.quality.toUpperCase()}</span>
+                    <span className="text-xs text-emerald-400">Download</span>
+                  </a>
+                ))}
+              </div>
+            </Card>
+          )}
+
           <Card padding="md">
-            <h3 className="text-sm font-semibold mb-4 text-foreground/80 uppercase tracking-wider">Actions</h3>
+            <h3 className="text-sm font-semibold mb-4 text-foreground/80 uppercase tracking-wider">Advanced</h3>
             <div className="space-y-2.5">
               <Button
                 onClick={handleAnalyze}

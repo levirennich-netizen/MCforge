@@ -10,10 +10,36 @@ from pydantic import BaseModel
 
 import database as db
 from models import ExportRequest, JobType
-from pipeline.orchestrator import run_compose_and_export
+from pipeline.orchestrator import run_compose_and_export, run_auto_edit
 from services.job_queue import enqueue_job
 
 router = APIRouter(tags=["export"])
+
+
+class AutoEditRequest(BaseModel):
+    style: str = "high_energy"
+    quality: str = "1080p"
+
+
+@router.post("/projects/{project_id}/auto-edit")
+async def start_auto_edit(project_id: str, req: AutoEditRequest):
+    """One-click AI video generation: analyze → plan → export."""
+    project = db.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    clips = db.get_clips(project_id)
+    if not clips:
+        raise HTTPException(400, "No clips uploaded. Upload clips first.")
+
+    job = await enqueue_job(
+        project_id=project_id,
+        job_type=JobType.AUTO_EDIT,
+        task_fn=run_auto_edit,
+        style_preset=req.style,
+        quality=req.quality,
+    )
+    return {"job_id": job.id, "status": "queued", "message": "AI auto-edit started"}
 
 
 @router.post("/projects/{project_id}/export")

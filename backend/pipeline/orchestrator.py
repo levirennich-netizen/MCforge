@@ -129,6 +129,87 @@ async def run_narration_generation(
     conn.close()
 
 
+async def run_auto_edit(
+    project_id: str,
+    job_id: str,
+    style_preset: str = "high_energy",
+    quality: str = "1080p",
+) -> None:
+    """One-click: analyze all clips → generate AI edit plan → compose & export video."""
+    from pipeline.analyze_video import analyze_clip
+    from pipeline.analyze_audio import analyze_clip_audio
+    from pipeline.planner import generate_edit_plan
+    from pipeline.compose import compose_video
+    from pipeline.export import export_final
+
+    clips = db.get_clips(project_id)
+    if not clips:
+        raise RuntimeError("No clips uploaded. Upload at least one clip first.")
+
+    # ── Step 1: Analyze all clips ──
+    db.update_project_status(project_id, "analyzing")
+    for i, clip in enumerate(clips):
+        update_progress(
+            job_id, project_id,
+            (i / len(clips)) * 0.33,
+            f"Analyzing clip {i+1}/{len(clips)}...", "auto_edit",
+        )
+        video_analysis = await analyze_clip(
+            clip.id, clip.file_path, project_id,
+            progress_callback=lambda msg, _i=i: update_progress(
+                job_id, project_id, (_i / len(clips)) * 0.33,
+                f"Clip {_i+1}: {msg}", "auto_edit"),
+        )
+        audio_analysis = None
+        if clip.audio_path:
+            audio_analysis = await analyze_clip_audio(
+                clip.id, clip.audio_path, video_analysis=video_analysis,
+                whisper_model=settings.WHISPER_MODEL_SIZE,
+            )
+        db.save_analysis(clip.id, project_id, video_analysis, audio_analysis)
+
+    # ── Step 2: Generate AI edit plan ──
+    update_progress(job_id, project_id, 0.33, "AI is creating your edit plan...", "auto_edit")
+    db.update_project_status(project_id, "planning")
+
+    analyses = db.get_all_analyses(project_id)
+    plan = await generate_edit_plan(
+        project_id, analyses, StylePreset(style_preset),
+        progress_callback=lambda msg: update_progress(
+            job_id, project_id, 0.5, msg, "auto_edit"),
+    )
+    existing = db.get_edit_plan(project_id)
+    plan.version = (existing.version + 1) if existing else 1
+    db.save_edit_plan(plan)
+
+    # ── Step 3: Compose & export video ──
+    update_progress(job_id, project_id, 0.66, "Assembling your video...", "auto_edit")
+    db.update_project_status(project_id, "composing")
+
+    composed_path = await compose_video(
+        project_id, plan, quality=quality,
+        progress_callback=lambda msg: update_progress(
+            job_id, project_id, 0.75, msg, "auto_edit"),
+    )
+
+    update_progress(job_id, project_id, 0.9, "Final encoding...", "auto_edit")
+    result = await export_final(project_id, composed_path, quality=quality)
+
+    # Save export record
+    conn = db.get_db()
+    conn.execute(
+        "INSERT INTO exports (id, project_id, edit_plan_id, quality, output_path, "
+        "file_size_bytes, duration_seconds, status, created_at, completed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (result.id, project_id, plan.id, quality, result.output_path,
+         result.file_size_bytes, result.duration_seconds, "completed",
+         result.created_at, result.completed_at),
+    )
+    conn.commit()
+    conn.close()
+    db.update_project_status(project_id, "exported")
+
+
 async def run_compose_and_export(
     project_id: str,
     job_id: str,

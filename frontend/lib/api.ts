@@ -159,6 +159,11 @@ export const generateNarration = (projectId: string, voiceId: string = "rex", in
 
 export const getVoices = () => get<Voice[]>("/tts/voices");
 
+// ── Auto-Edit (one-click AI video) ────────────────────────────────────────
+
+export const startAutoEdit = (projectId: string, style: string = "high_energy", quality: string = "1080p") =>
+  post<{ job_id: string }>(`/projects/${projectId}/auto-edit`, { style, quality });
+
 // ── Export ─────────────────────────────────────────────────────────────────
 
 export const startExport = (projectId: string, quality: string = "1080p", opts?: {

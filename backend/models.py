@@ -41,6 +41,7 @@ class JobType(str, Enum):
     NARRATE = "narrate"
     COMPOSE = "compose"
     EXPORT = "export"
+    AUTO_EDIT = "auto_edit"
     GENERATE_IMAGE = "generate_image"
     GENERATE_SFX = "generate_sfx"
     GENERATE_INTRO = "generate_intro"
