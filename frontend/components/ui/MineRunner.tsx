@@ -60,72 +60,6 @@ const STEVE_COLORS: Record<string, string> = {
   "1": "#2b2b8b",  // pants indigo
 };
 
-// TNT block (16x16 px → 32x32 on canvas)
-const TNT_SPRITE = [
-  "DDDDDDDDDDDDDDDD",
-  "DRRRRRRRRRRRRRRRRD",
-  "DRRRRRRRRRRRRRRRD",
-  "DRRWWWWWWWWWWWRRD",
-  "DRRWTTTTTTTTTWRRD",
-  "DRRWTNNNNNNNTWRRD",
-  "DRRWTNNNNNNNTWRRD",
-  "DRRWTTTTTTTTTWRRD",
-  "DRRWWWWWWWWWWWRRD",
-  "DRRRRRRRRRRRRRRRD",
-  "DRRRRRRRRRRRRRRRRD",
-  "DDDDDDDDDDDDDDDD",
-];
-
-const TNT_COLORS: Record<string, string> = {
-  "D": "#8b0000",  // dark red border
-  "R": "#cc2200",  // red body
-  "W": "#e8e8e8",  // white band
-  "T": "#222222",  // TNT text dark
-  "N": "#333333",  // TNT text
-};
-
-// Cactus (6x16 px → 12x32 on canvas)
-const CACTUS_SPRITE = [
-  "..GGGG..",
-  "..GLGG..",
-  "..GGGG..",
-  "G.GLGG..",
-  "G.GGGG.G",
-  "G.GLGG.G",
-  "GGGGGGGG",
-  "..GGGG..",
-  "..GLGG..",
-  "..GGGG..",
-  "..GLGG..",
-  "..GGGG..",
-  "..GLGG..",
-  "..GGGG..",
-  "..GGGG..",
-  "..GGGG..",
-];
-
-const CACTUS_COLORS: Record<string, string> = {
-  "G": "#1a7a2e",  // green
-  "L": "#0f5e1f",  // dark green stripe
-};
-
-// Creeper face (8x8 px)
-const CREEPER_SPRITE = [
-  "GGGGGGGG",
-  "GDDGGDDG",
-  "GDDGGDDG",
-  "GGGDDGGG",
-  "GGDDDDGG",
-  "GGDDDDGG",
-  "GGDGGDGG",
-  "GGGGGGGG",
-];
-
-const CREEPER_COLORS: Record<string, string> = {
-  "G": "#46a832",  // creeper green
-  "D": "#1a1a1a",  // dark face
-};
-
 // Grass block top colors
 const GRASS_TOP = "#5d9b3a";
 const GRASS_TOP_LIGHT = "#6db344";
@@ -374,8 +308,6 @@ export function MineRunner() {
         // TNT: draw the sprite scaled to fit the obstacle
         const bx = Math.floor(obs.x);
         const by = GROUND_Y - obs.height;
-        const tntPx = Math.floor(obs.width / 12);
-
         // Red base
         ctx.fillStyle = "#cc2200";
         ctx.fillRect(bx, by, obs.width, obs.height);
@@ -400,8 +332,6 @@ export function MineRunner() {
         // Creeper enemy
         const bx = Math.floor(obs.x);
         const by = GROUND_Y - obs.height;
-        const cpx = Math.floor(obs.width / 8);
-
         // Green body
         ctx.fillStyle = "#46a832";
         ctx.fillRect(bx, by, obs.width, obs.height);
