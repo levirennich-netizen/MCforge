@@ -28,7 +28,7 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-image: url("/mc-bg.jpg");
+  background-image: url("/mc-bg.jpg"), url("https://wallpapercave.com/wp/wp7930312.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

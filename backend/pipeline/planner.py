@@ -200,37 +200,39 @@ Call the create_edit_plan function with your editing decisions."""
     try:
         result = await chat_completion(
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": system_prompt + "\n\nRespond with ONLY valid JSON (no markdown, no code fences). The JSON must have: segments (array), background_music (string), reasoning (string)."},
                 {
                     "role": "user",
                     "content": (
                         f"Here are the analyzed clips:\n\n"
                         f"{json.dumps(clips_summary, indent=2)}\n\n"
-                        f"Create an optimized edit plan for a {style_preset.value} Minecraft YouTube video."
+                        f"Create an optimized edit plan for a {style_preset.value} Minecraft YouTube video. "
+                        f"Return ONLY the JSON object."
                     ),
                 },
             ],
-            tools=EDIT_PLAN_TOOLS,
-            tool_choice={"type": "function", "function": {"name": "create_edit_plan"}},
             temperature=0.7,
             max_tokens=8192,
         )
 
-        # Parse function call result
-        if result.get("type") == "function_call":
-            args = result["arguments"]
-        else:
-            # Fallback: try to parse content as JSON
-            content = result.get("content", "")
-            try:
-                start = content.find("{")
-                end = content.rfind("}") + 1
-                args = json.loads(content[start:end])
-            except (json.JSONDecodeError, ValueError):
+        # Parse JSON from response
+        content = result.get("content", "")
+        try:
+            # Strip markdown code fences if present
+            clean = content.strip()
+            if clean.startswith("```"):
+                clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
+                clean = clean.rsplit("```", 1)[0]
+            start = clean.find("{")
+            end = clean.rfind("}") + 1
+            if start >= 0 and end > start:
+                args = json.loads(clean[start:end])
+            else:
                 args = _fallback_plan(analyses, style_preset, target_duration)
+        except (json.JSONDecodeError, ValueError):
+            args = _fallback_plan(analyses, style_preset, target_duration)
     except Exception as e:
-        # API unavailable (no credits, network error, etc.) — use local fallback
-        print(f"Grok API failed for plan generation ({e}), using fallback planner")
+        print(f"AI API failed for plan generation ({e}), using fallback planner")
         if progress_callback:
             progress_callback("AI unavailable, generating plan locally...")
         args = _fallback_plan(analyses, style_preset, target_duration)
