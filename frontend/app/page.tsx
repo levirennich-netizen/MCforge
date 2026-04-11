@@ -237,17 +237,6 @@ export default function Dashboard() {
         <p className="text-xs text-muted/40">Built with AI. Made for Minecraft creators.</p>
       </div>
 
-      {/* Corner icon */}
-      <div className="fixed bottom-4 left-4 w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity cursor-default select-none">
-        <svg className="w-4 h-4 text-emerald-400" viewBox="0 0 16 16" fill="currentColor">
-          <rect x="3" y="2" width="4" height="4" />
-          <rect x="9" y="2" width="4" height="4" />
-          <rect x="5" y="6" width="6" height="2" />
-          <rect x="4" y="8" width="3" height="4" />
-          <rect x="9" y="8" width="3" height="4" />
-        </svg>
-      </div>
-
       <ConfirmDialog
         open={!!deleteTarget}
         onConfirm={handleDelete}
