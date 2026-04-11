@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { ToastContainer } from "@/components/ui/Toast";
+import { BackendWarmup } from "@/components/layout/BackendWarmup";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -23,6 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} font-sans antialiased bg-[#08080f] text-[#e8e8f0] min-h-screen`}>
+        <BackendWarmup />
         <Header />
         <main className="flex-1 relative">{children}</main>
         <ToastContainer />

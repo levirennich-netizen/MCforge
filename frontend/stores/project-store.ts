@@ -23,6 +23,7 @@ interface ProjectStore {
   setAnalyses: (analyses: AnalysisResult[]) => void;
   setEditPlan: (plan: EditPlan | null) => void;
   updateJob: (jobId: string, data: { status: string; progress: number; message: string; stage: string }) => void;
+  removeJob: (jobId: string) => void;
   clearJobs: () => void;
 }
 
@@ -41,5 +42,10 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setEditPlan: (editPlan) => set({ editPlan }),
   updateJob: (jobId, data) =>
     set((s) => ({ activeJobs: { ...s.activeJobs, [jobId]: data } })),
+  removeJob: (jobId) =>
+    set((s) => {
+      const { [jobId]: _, ...rest } = s.activeJobs;
+      return { activeJobs: rest };
+    }),
   clearJobs: () => set({ activeJobs: {} }),
 }));

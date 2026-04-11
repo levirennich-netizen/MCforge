@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listProjects, deleteProject } from "@/lib/api";
+import { listProjects, deleteProject, warmUpBackend } from "@/lib/api";
 import type { Project } from "@/types/project";
 import { formatDuration } from "@/lib/utils";
 import { toast, catchToast } from "@/lib/toast";
@@ -36,6 +36,7 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
+    warmUpBackend();
     listProjects()
       .then(setProjects)
       .catch(catchToast("Failed to load projects"))

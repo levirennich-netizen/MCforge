@@ -15,14 +15,32 @@ class APIError extends Error {
   }
 }
 
+// Retry wrapper for Render cold-start resilience
+async function fetchWithRetry(url: string, opts?: RequestInit, retries = 2): Promise<Response> {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), i === 0 ? 15000 : 30000);
+      const res = await fetch(url, { ...opts, signal: controller.signal });
+      clearTimeout(timeout);
+      return res;
+    } catch (err) {
+      if (i === retries) throw err;
+      // Wait before retry (backend might be waking up)
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+  throw new Error("Request failed");
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const res = await fetchWithRetry(`${API_BASE}${path}`);
   if (!res.ok) throw new APIError(res);
   return res.json();
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetchWithRetry(`${API_BASE}${path}`, {
     method: "POST",
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
@@ -32,7 +50,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetchWithRetry(`${API_BASE}${path}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -42,8 +60,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del(path: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method: "DELETE" });
+  const res = await fetchWithRetry(`${API_BASE}${path}`, { method: "DELETE" });
   if (!res.ok) throw new APIError(res);
+}
+
+// Wake up backend on app load (Render free tier sleeps after 15min)
+export function warmUpBackend() {
+  fetch(`${API_BASE}/health`).catch(() => {});
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────
