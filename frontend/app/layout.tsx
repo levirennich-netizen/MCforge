@@ -29,14 +29,29 @@ export default function RootLayout({
         <main className="flex-1 relative">{children}</main>
         <ToastContainer />
         {/* Corner icon */}
-        <div className="fixed bottom-4 left-4 z-50 w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity select-none"
-             title="MCForge">
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="#10b981">
-            <rect x="2" y="2" width="5" height="5" />
-            <rect x="9" y="2" width="5" height="5" />
-            <rect x="5" y="7" width="6" height="2" />
-            <rect x="3" y="9" width="4" height="5" />
-            <rect x="9" y="9" width="4" height="5" />
+        <div
+          style={{
+            position: "fixed",
+            bottom: "16px",
+            left: "16px",
+            zIndex: 9999,
+            width: "36px",
+            height: "36px",
+            borderRadius: "8px",
+            backgroundColor: "rgba(16,185,129,0.15)",
+            border: "1px solid rgba(16,185,129,0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          title="MCForge"
+        >
+          <svg width="20" height="20" viewBox="0 0 16 16">
+            <rect x="2" y="2" width="5" height="5" fill="#10b981" />
+            <rect x="9" y="2" width="5" height="5" fill="#10b981" />
+            <rect x="5" y="7" width="6" height="2" fill="#10b981" />
+            <rect x="3" y="9" width="4" height="5" fill="#10b981" />
+            <rect x="9" y="9" width="4" height="5" fill="#10b981" />
           </svg>
         </div>
       </body>
