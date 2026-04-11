@@ -62,46 +62,52 @@ async def generate_narration(
         "cinematic": "Calm, descriptive, storytelling tone, atmospheric, immersive",
     }
 
-    result = await chat_completion(
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    f"You are a Minecraft YouTuber writing narration for a video.\n"
-                    f"Style: {edit_plan.style_preset.value} - {style_desc.get(edit_plan.style_preset.value, '')}\n"
-                    f"{f'Additional instructions: {custom_instructions}' if custom_instructions else ''}\n\n"
-                    f"Write engaging narration for each segment. Keep it:\n"
-                    f"- Conversational and matching the style\n"
-                    f"- Matching the pacing (segment durations shown)\n"
-                    f"- Reference what's happening on screen (labels describe visuals)\n"
-                    f"- Include natural reactions and energy\n"
-                    f"- Keep each segment's narration proportional to its duration\n\n"
-                    f"Respond as JSON array: [{{\"segment_id\": \"...\", \"narration_text\": \"...\"}}]"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"Video segments:\n{json.dumps(segments_desc, indent=2)}",
-            },
-        ],
-        temperature=0.8,
-        max_tokens=4096,
-    )
-
-    # Parse script
-    script = []
-    content = result.get("content", "")
     try:
-        start = content.find("[")
-        end = content.rfind("]") + 1
-        if start >= 0 and end > start:
-            raw = json.loads(content[start:end])
-            script = [
-                NarrationSegment(segment_id=s["segment_id"], narration_text=s["narration_text"])
-                for s in raw
-            ]
-    except (json.JSONDecodeError, KeyError):
-        # Fallback: generate generic narration
+        result = await chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        f"You are a Minecraft YouTuber writing narration for a video.\n"
+                        f"Style: {edit_plan.style_preset.value} - {style_desc.get(edit_plan.style_preset.value, '')}\n"
+                        f"{f'Additional instructions: {custom_instructions}' if custom_instructions else ''}\n\n"
+                        f"Write engaging narration for each segment. Keep it:\n"
+                        f"- Conversational and matching the style\n"
+                        f"- Matching the pacing (segment durations shown)\n"
+                        f"- Reference what's happening on screen (labels describe visuals)\n"
+                        f"- Include natural reactions and energy\n"
+                        f"- Keep each segment's narration proportional to its duration\n\n"
+                        f"Respond as JSON array: [{{\"segment_id\": \"...\", \"narration_text\": \"...\"}}]"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Video segments:\n{json.dumps(segments_desc, indent=2)}",
+                },
+            ],
+            temperature=0.8,
+            max_tokens=4096,
+        )
+
+        # Parse script
+        script = []
+        content = result.get("content", "")
+        try:
+            start = content.find("[")
+            end = content.rfind("]") + 1
+            if start >= 0 and end > start:
+                raw = json.loads(content[start:end])
+                script = [
+                    NarrationSegment(segment_id=s["segment_id"], narration_text=s["narration_text"])
+                    for s in raw
+                ]
+        except (json.JSONDecodeError, KeyError):
+            pass
+    except Exception as e:
+        print(f"Grok API failed for narration script ({e}), using fallback")
+
+    # Fallback script if AI failed
+    if not script:
         for seg in edit_plan.segments:
             script.append(NarrationSegment(
                 segment_id=seg.segment_id,
@@ -113,7 +119,13 @@ async def generate_narration(
         progress_callback("Generating voice narration...")
 
     full_text = " ".join(s.narration_text for s in script)
-    audio_bytes = await generate_tts(full_text, voice_id=voice_id)
+    try:
+        audio_bytes = await generate_tts(full_text, voice_id=voice_id)
+    except Exception as e:
+        raise RuntimeError(
+            f"Voice generation failed — xAI TTS requires API credits. "
+            f"You can skip narration and go straight to Export. Error: {e}"
+        )
 
     # Save audio
     out_dir = narration_dir(project_id)

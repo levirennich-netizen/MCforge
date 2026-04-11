@@ -197,37 +197,43 @@ ding, pop, woosh
 
 Call the create_edit_plan function with your editing decisions."""
 
-    result = await chat_completion(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {
-                "role": "user",
-                "content": (
-                    f"Here are the analyzed clips:\n\n"
-                    f"{json.dumps(clips_summary, indent=2)}\n\n"
-                    f"Create an optimized edit plan for a {style_preset.value} Minecraft YouTube video."
-                ),
-            },
-        ],
-        tools=EDIT_PLAN_TOOLS,
-        tool_choice={"type": "function", "function": {"name": "create_edit_plan"}},
-        temperature=0.7,
-        max_tokens=8192,
-    )
+    try:
+        result = await chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Here are the analyzed clips:\n\n"
+                        f"{json.dumps(clips_summary, indent=2)}\n\n"
+                        f"Create an optimized edit plan for a {style_preset.value} Minecraft YouTube video."
+                    ),
+                },
+            ],
+            tools=EDIT_PLAN_TOOLS,
+            tool_choice={"type": "function", "function": {"name": "create_edit_plan"}},
+            temperature=0.7,
+            max_tokens=8192,
+        )
 
-    # Parse function call result
-    if result.get("type") == "function_call":
-        args = result["arguments"]
-    else:
-        # Fallback: try to parse content as JSON
-        content = result.get("content", "")
-        try:
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            args = json.loads(content[start:end])
-        except (json.JSONDecodeError, ValueError):
-            # Generate a basic plan from highlights
-            args = _fallback_plan(analyses, style_preset, target_duration)
+        # Parse function call result
+        if result.get("type") == "function_call":
+            args = result["arguments"]
+        else:
+            # Fallback: try to parse content as JSON
+            content = result.get("content", "")
+            try:
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                args = json.loads(content[start:end])
+            except (json.JSONDecodeError, ValueError):
+                args = _fallback_plan(analyses, style_preset, target_duration)
+    except Exception as e:
+        # API unavailable (no credits, network error, etc.) — use local fallback
+        print(f"Grok API failed for plan generation ({e}), using fallback planner")
+        if progress_callback:
+            progress_callback("AI unavailable, generating plan locally...")
+        args = _fallback_plan(analyses, style_preset, target_duration)
 
     # Convert to EditPlan model
     segments = []
