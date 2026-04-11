@@ -10,7 +10,7 @@ import database as db
 from config import settings
 from models import GenerateAssetType, GeneratedAsset, new_id
 from services.file_manager import generated_images_dir, generated_sfx_dir, generated_intros_dir
-from services.grok_client import chat_completion, generate_image, generate_tts
+from services.grok_client import chat_completion, generate_image_pollinations, generate_tts
 from services.job_queue import update_progress
 
 
@@ -27,27 +27,27 @@ STYLE_HINTS = {
 async def run_generate_image(
     project_id: str, job_id: str, prompt: str, style: str = "minecraft"
 ) -> GeneratedAsset:
-    """Generate an image using Grok Aurora."""
+    """Generate an image using Pollinations.ai (free)."""
     update_progress(job_id, project_id, 0.1, "Enhancing prompt...", "generate_image")
 
     # Enhance prompt with style hints
     style_prefix = STYLE_HINTS.get(style, "")
     enhanced_prompt = f"{style_prefix}{prompt}"
 
-    update_progress(job_id, project_id, 0.3, "Generating image with Aurora...", "generate_image")
+    update_progress(job_id, project_id, 0.3, "Generating image...", "generate_image")
 
-    images = await generate_image(enhanced_prompt)
-    if not images:
-        raise RuntimeError("No images returned from API")
+    image_bytes = await generate_image_pollinations(enhanced_prompt)
+    if not image_bytes:
+        raise RuntimeError("No image returned from API")
 
     update_progress(job_id, project_id, 0.8, "Saving image...", "generate_image")
 
-    # Save the first image
+    # Save the image
     out_dir = generated_images_dir(project_id)
     asset_id = new_id("gen_")
-    filename = f"{asset_id}.png"
+    filename = f"{asset_id}.jpg"
     file_path = out_dir / filename
-    file_path.write_bytes(images[0])
+    file_path.write_bytes(image_bytes)
 
     # Create asset record
     asset = GeneratedAsset(
@@ -57,8 +57,8 @@ async def run_generate_image(
         name=f"Image: {prompt[:50]}",
         prompt=prompt,
         file_path=str(file_path),
-        thumbnail_path=str(file_path),  # PNG is its own thumbnail
-        file_size_bytes=len(images[0]),
+        thumbnail_path=str(file_path),  # Image is its own thumbnail
+        file_size_bytes=len(image_bytes),
         metadata_json=json.dumps({"style": style}),
     )
     db.create_generated_asset(asset)
@@ -71,40 +71,11 @@ async def run_generate_sfx(
     project_id: str, job_id: str, prompt: str,
     voice_id: str = "rex", duration_hint: str = "short"
 ) -> GeneratedAsset:
-    """Generate a sound effect using AI-crafted TTS script."""
-    update_progress(job_id, project_id, 0.1, "Crafting sound script...", "generate_sfx")
+    """Generate a sound effect using TTS with the prompt as script."""
+    update_progress(job_id, project_id, 0.2, "Preparing script...", "generate_sfx")
 
-    duration_guidance = {
-        "short": "1-3 seconds, very brief",
-        "medium": "3-6 seconds",
-        "long": "6-12 seconds",
-    }
-
-    # Use Grok to craft a creative TTS script for the sound effect
-    result = await chat_completion(
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a sound designer. Given a sound effect description, write a short script "
-                    "that when read aloud by a TTS voice will sound like the described effect. "
-                    "Use onomatopoeia, vocal sound effects, and creative text. "
-                    "Return ONLY the script text, nothing else."
-                ),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Create a TTS script for this sound effect: {prompt}\n"
-                    f"Target duration: {duration_guidance.get(duration_hint, '3-6 seconds')}\n"
-                    f"Be creative with onomatopoeia and vocal expressions."
-                ),
-            },
-        ],
-        temperature=0.9,
-        max_tokens=256,
-    )
-    script = result.get("content", prompt)
+    # Use the prompt directly as the TTS script
+    script = prompt
 
     update_progress(job_id, project_id, 0.4, "Generating audio...", "generate_sfx")
 

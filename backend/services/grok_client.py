@@ -135,24 +135,19 @@ async def analyze_image(
         return {"raw": content}
 
 
-async def generate_image(
+async def generate_image_pollinations(
     prompt: str,
-    model: str = "grok-2-image",
-    n: int = 1,
-) -> list[bytes]:
-    """Generate images via Grok Aurora. Returns list of image bytes."""
-    async with _semaphore:
-        client = get_client()
-        response = await client.images.generate(
-            model=model,
-            prompt=prompt,
-            n=n,
-            response_format="b64_json",
-        )
-        results = []
-        for img_data in response.data:
-            results.append(base64.b64decode(img_data.b64_json))
-        return results
+    width: int = 1024,
+    height: int = 1024,
+) -> bytes:
+    """Generate an image via Pollinations.ai (free, no API key needed)."""
+    import urllib.parse
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true"
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
 
 
 async def generate_tts(
