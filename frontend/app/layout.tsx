@@ -39,7 +39,7 @@ export default function RootLayout({
             inset: 0,
             zIndex: -2,
             objectFit: "cover",
-            opacity: 0.15,
+            opacity: 0.35,
             pointerEvents: "none",
           }}
         />
@@ -48,7 +48,7 @@ export default function RootLayout({
             position: "fixed",
             inset: 0,
             zIndex: -1,
-            background: "linear-gradient(to bottom, rgba(8,8,15,0.3) 0%, rgba(8,8,15,0.7) 100%)",
+            background: "linear-gradient(to bottom, rgba(8,8,15,0.15) 0%, rgba(8,8,15,0.5) 100%)",
             pointerEvents: "none",
           }}
         />
@@ -74,12 +74,17 @@ export default function RootLayout({
           }}
           title="MCForge"
         >
-          <svg width="20" height="20" viewBox="0 0 16 16">
-            <rect x="2" y="2" width="5" height="5" fill="#10b981" />
-            <rect x="9" y="2" width="5" height="5" fill="#10b981" />
-            <rect x="5" y="7" width="6" height="2" fill="#10b981" />
-            <rect x="3" y="9" width="4" height="5" fill="#10b981" />
-            <rect x="9" y="9" width="4" height="5" fill="#10b981" />
+          <svg width="20" height="20" viewBox="0 0 8 8">
+            {/* Green background */}
+            <rect x="0" y="0" width="8" height="8" fill="#4aba3b" />
+            {/* Eyes - dark squares */}
+            <rect x="1" y="1" width="2" height="2" fill="#1a1a1a" />
+            <rect x="5" y="1" width="2" height="2" fill="#1a1a1a" />
+            {/* Mouth - T-shape frown */}
+            <rect x="3" y="3" width="2" height="1" fill="#1a1a1a" />
+            <rect x="2" y="4" width="4" height="1" fill="#1a1a1a" />
+            <rect x="2" y="5" width="1" height="2" fill="#1a1a1a" />
+            <rect x="5" y="5" width="1" height="2" fill="#1a1a1a" />
           </svg>
         </div>
       </body>
