@@ -22,28 +22,29 @@ body {
   background: var(--background);
 }
 
-/* Subtle dot grid background */
+/* Minecraft background scene */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0);
-  background-size: 32px 32px;
+  background-image: url("/mc-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.15;
   pointer-events: none;
 }
 
-/* Top ambient glow */
+/* Dark overlay + ambient glow */
 body::after {
   content: "";
   position: fixed;
-  top: -50%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120%;
-  height: 60%;
+  inset: 0;
   z-index: -1;
-  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.04) 0%, transparent 70%);
+  background:
+    radial-gradient(ellipse at center top, rgba(16, 185, 129, 0.04) 0%, transparent 60%),
+    linear-gradient(to bottom, rgba(8,8,15,0.3) 0%, rgba(8,8,15,0.7) 100%);
   pointer-events: none;
 }
 
