@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { SkeletonList } from "@/components/ui/Skeleton";
+import { MineRunner } from "@/components/ui/MineRunner";
 
 const STATUS_VARIANT: Record<string, "muted" | "info" | "warning" | "success" | "error"> = {
   created: "muted",
@@ -163,7 +163,10 @@ export default function Dashboard() {
         </div>
 
         {loading ? (
-          <SkeletonList count={3} />
+          <div className="space-y-3">
+            <p className="text-xs text-muted/60 text-center">Waking up server... play while you wait!</p>
+            <MineRunner />
+          </div>
         ) : projects.length === 0 ? (
           <Card padding="lg" className="text-center py-12">
             <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20 flex items-center justify-center">
