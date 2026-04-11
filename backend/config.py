@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
 
+    # Groq (free tier)
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
     # Paths
     DATA_DIR: Path = Path("./data")
     FFMPEG_PATH: str = "ffmpeg"

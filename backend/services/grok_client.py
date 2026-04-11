@@ -1,4 +1,4 @@
-"""AI client — uses Google Gemini (free) with Grok fallback, via OpenAI SDK."""
+"""AI client — uses Groq/Gemini (free) with Grok fallback, via OpenAI SDK."""
 
 from __future__ import annotations
 
@@ -18,10 +18,15 @@ _semaphore = asyncio.Semaphore(3)
 
 
 def get_client() -> AsyncOpenAI:
-    """Get the AI client — prefers Gemini (free), falls back to Grok."""
+    """Get the AI client — prefers Groq, then Gemini, then Grok."""
     global _client
     if _client is None:
-        if settings.GEMINI_API_KEY:
+        if settings.GROQ_API_KEY:
+            _client = AsyncOpenAI(
+                api_key=settings.GROQ_API_KEY,
+                base_url="https://api.groq.com/openai/v1",
+            )
+        elif settings.GEMINI_API_KEY:
             _client = AsyncOpenAI(
                 api_key=settings.GEMINI_API_KEY,
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -36,14 +41,18 @@ def get_client() -> AsyncOpenAI:
 
 def _chat_model() -> str:
     """Return the model name based on which provider is configured."""
+    if settings.GROQ_API_KEY:
+        return settings.GROQ_MODEL
     if settings.GEMINI_API_KEY:
         return settings.GEMINI_MODEL
     return settings.GROK_CHAT_MODEL
 
 
 def _vision_model() -> str:
+    if settings.GROQ_API_KEY:
+        return "llama-3.2-90b-vision-preview"  # Groq vision model
     if settings.GEMINI_API_KEY:
-        return settings.GEMINI_MODEL  # Gemini flash supports vision
+        return settings.GEMINI_MODEL
     return settings.GROK_VISION_MODEL
 
 
