@@ -1,7 +1,8 @@
-"""Stage 2: Video Analysis — scene detection, motion, and local frame classification."""
+"""Stage 2: Video Analysis — scene detection, motion, and AI/local frame classification."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import cv2
@@ -180,6 +181,62 @@ def classify_frame_local(frame_path: str, motion_score: float = 0.0) -> dict:
     }
 
 
+async def _classify_frame_ai(frame_path: str, motion_score: float) -> dict:
+    """Use AI vision to classify a Minecraft gameplay frame."""
+    from services.grok_client import analyze_image
+
+    prompt = (
+        "Analyze this Minecraft gameplay screenshot. Respond with ONLY a JSON object:\n"
+        '{"categories": ["ACTION"|"DEATH"|"BUILD"|"EXPLORATION"|"INVENTORY"|"TRANSITION"|"IDLE"], '
+        '"excitement": 1-10, '
+        '"description": "brief description of what is happening"}\n\n'
+        "Categories:\n"
+        "- ACTION: combat, PvP, explosions, mob fights, intense moments\n"
+        "- DEATH: death screen, respawn, 'You Died'\n"
+        "- BUILD: building, placing blocks, constructing\n"
+        "- EXPLORATION: traveling, discovering, caves, ocean, nether\n"
+        "- INVENTORY: crafting table, inventory screen, chest UI\n"
+        "- TRANSITION: portal, loading, dimension change\n"
+        "- IDLE: standing still, AFK, menu screen\n\n"
+        f"Motion score: {motion_score:.2f} (0=still, 1=very fast)\n"
+        "Return ONLY the JSON, no other text."
+    )
+
+    result = await analyze_image(frame_path, prompt)
+
+    # If we got a parsed dict with expected keys, use it
+    if "categories" in result and "excitement" in result:
+        cats = result["categories"]
+        if isinstance(cats, str):
+            cats = [cats]
+        return {
+            "categories": cats,
+            "excitement": int(result.get("excitement", 5)),
+            "description": result.get("description", "AI analyzed frame"),
+        }
+
+    # Try parsing from raw text
+    raw = result.get("raw", "")
+    if raw:
+        try:
+            start = raw.find("{")
+            end = raw.rfind("}") + 1
+            if start >= 0 and end > start:
+                parsed = json.loads(raw[start:end])
+                cats = parsed.get("categories", ["IDLE"])
+                if isinstance(cats, str):
+                    cats = [cats]
+                return {
+                    "categories": cats,
+                    "excitement": int(parsed.get("excitement", 5)),
+                    "description": parsed.get("description", "AI analyzed frame"),
+                }
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    raise ValueError("Could not parse AI vision response")
+
+
 async def analyze_clip(
     clip_id: str,
     clip_path: str,
@@ -218,14 +275,35 @@ async def analyze_clip(
     timestamps = [(s.start_time + s.end_time) / 2 for s in scenes]
     frame_paths = extract_keyframes(clip_path, project_id, clip_id, timestamps)
 
-    # Step 4: Local frame classification (no API needed)
+    # Step 4: Frame classification — AI vision if available, else local OpenCV
     if progress_callback:
-        progress_callback("Classifying frames...")
+        progress_callback("Classifying frames with AI...")
     frame_analyses = []
+
+    # Try AI vision for all frames in one batch-style approach
+    ai_available = False
+    try:
+        from config import settings
+        if settings.GROQ_API_KEY or settings.GEMINI_API_KEY:
+            ai_available = True
+    except Exception:
+        pass
+
     for i, (path, ts) in enumerate(zip(frame_paths, timestamps)):
         try:
             motion = get_motion_at(ts)
-            result = classify_frame_local(str(path), motion_score=motion)
+            result = None
+
+            # Try AI vision first
+            if ai_available:
+                try:
+                    result = await _classify_frame_ai(str(path), motion)
+                except Exception as e:
+                    print(f"AI vision failed for frame {i} ({e}), using local")
+
+            # Fallback to local OpenCV
+            if result is None:
+                result = classify_frame_local(str(path), motion_score=motion)
 
             frame_analyses.append(FrameAnalysis(
                 timestamp=ts,
