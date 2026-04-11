@@ -40,6 +40,9 @@ class JobType(str, Enum):
     NARRATE = "narrate"
     COMPOSE = "compose"
     EXPORT = "export"
+    GENERATE_IMAGE = "generate_image"
+    GENERATE_SFX = "generate_sfx"
+    GENERATE_INTRO = "generate_intro"
 
 
 class JobStatus(str, Enum):
@@ -292,3 +295,51 @@ class ExportResult(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+
+
+# ── Generate ───────────────────────────────────────────────────────────────
+
+
+class GenerateAssetType(str, Enum):
+    IMAGE = "image"
+    SFX = "sfx"
+    ANIMATED_INTRO = "animated_intro"
+
+
+class AnimatedIntroType(str, Enum):
+    TITLE_CARD = "title_card"
+    LOWER_THIRD = "lower_third"
+    END_SCREEN = "end_screen"
+
+
+class GenerateImageRequest(BaseModel):
+    prompt: str
+    style: str = "minecraft"  # minecraft | thumbnail | overlay | pixel_art
+
+
+class GenerateSfxRequest(BaseModel):
+    prompt: str
+    voice_id: str = "rex"
+    duration_hint: str = "short"  # short | medium | long
+
+
+class GenerateAnimatedIntroRequest(BaseModel):
+    intro_type: AnimatedIntroType = AnimatedIntroType.TITLE_CARD
+    title: str
+    subtitle: str = ""
+    duration_seconds: float = 5.0
+    color_scheme: str = "emerald"  # emerald | gold | crimson | diamond
+
+
+class GeneratedAsset(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("gen_"))
+    project_id: str
+    asset_type: GenerateAssetType
+    name: str
+    prompt: str = ""
+    file_path: str = ""
+    thumbnail_path: str = ""
+    duration_seconds: float = 0.0
+    file_size_bytes: int = 0
+    metadata_json: str = "{}"
+    created_at: str = Field(default_factory=now_iso)

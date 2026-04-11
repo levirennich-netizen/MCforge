@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/types/chat";
 import type { AnalysisResult, Highlight } from "@/types/analysis";
 import type { EditPlan, EditSegment } from "@/types/timeline";
 import type { Voice, ExportRecord } from "@/types/api";
+import type { GeneratedAsset, ImageStyle, AnimatedIntroType, ColorScheme } from "@/types/generate";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -240,3 +241,35 @@ export async function streamChatMessage(
     }
   }
 }
+
+// ── Generate ──────────────────────────────────────────────────────────────
+
+export const generateImage = (projectId: string, prompt: string, style: ImageStyle = "minecraft") =>
+  post<{ job_id: string }>(`/projects/${projectId}/generate/image`, { prompt, style });
+
+export const generateSfx = (projectId: string, prompt: string, voice_id: string = "rex", duration_hint: string = "short") =>
+  post<{ job_id: string }>(`/projects/${projectId}/generate/sfx`, { prompt, voice_id, duration_hint });
+
+export const generateIntro = (
+  projectId: string,
+  intro_type: AnimatedIntroType,
+  title: string,
+  subtitle: string = "",
+  duration_seconds: number = 5,
+  color_scheme: ColorScheme = "emerald",
+) =>
+  post<{ job_id: string }>(`/projects/${projectId}/generate/intro`, {
+    intro_type, title, subtitle, duration_seconds, color_scheme,
+  });
+
+export const listGeneratedAssets = (projectId: string, assetType?: string) =>
+  get<GeneratedAsset[]>(`/projects/${projectId}/generate/assets${assetType ? `?asset_type=${assetType}` : ""}`);
+
+export const getGeneratedAssetFileUrl = (projectId: string, assetId: string) =>
+  `${API_BASE}/projects/${projectId}/generate/assets/${assetId}/file`;
+
+export const getGeneratedAssetThumbnailUrl = (projectId: string, assetId: string) =>
+  `${API_BASE}/projects/${projectId}/generate/assets/${assetId}/thumbnail`;
+
+export const deleteGeneratedAsset = (projectId: string, assetId: string) =>
+  del(`/projects/${projectId}/generate/assets/${assetId}`);

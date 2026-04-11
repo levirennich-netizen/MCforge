@@ -9,6 +9,7 @@ from models import (
     AudioAnalysis,
     ClipMetadata,
     EditPlan,
+    GeneratedAsset,
     Job,
     JobStatus,
     JobType,
@@ -133,6 +134,20 @@ def init_db() -> None:
             status TEXT NOT NULL DEFAULT 'pending',
             created_at TEXT NOT NULL,
             completed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS generated_assets (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            asset_type TEXT NOT NULL,
+            name TEXT NOT NULL,
+            prompt TEXT DEFAULT '',
+            file_path TEXT DEFAULT '',
+            thumbnail_path TEXT DEFAULT '',
+            duration_seconds REAL DEFAULT 0,
+            file_size_bytes INTEGER DEFAULT 0,
+            metadata_json TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL
         );
     """)
     conn.commit()
@@ -414,5 +429,55 @@ def get_chat_messages(project_id: str, limit: int = 50) -> list[dict]:
 def delete_chat_messages(project_id: str) -> None:
     conn = get_db()
     conn.execute("DELETE FROM chat_messages WHERE project_id = ?", (project_id,))
+    conn.commit()
+    conn.close()
+
+
+# ── Generated Asset CRUD ─────────────────────────────────────────────────
+
+
+def create_generated_asset(asset: GeneratedAsset) -> GeneratedAsset:
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO generated_assets (id, project_id, asset_type, name, prompt, "
+        "file_path, thumbnail_path, duration_seconds, file_size_bytes, metadata_json, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (asset.id, asset.project_id, asset.asset_type.value, asset.name, asset.prompt,
+         asset.file_path, asset.thumbnail_path, asset.duration_seconds,
+         asset.file_size_bytes, asset.metadata_json, asset.created_at),
+    )
+    conn.commit()
+    conn.close()
+    return asset
+
+
+def list_generated_assets(project_id: str, asset_type: Optional[str] = None) -> list[GeneratedAsset]:
+    conn = get_db()
+    if asset_type:
+        rows = conn.execute(
+            "SELECT * FROM generated_assets WHERE project_id = ? AND asset_type = ? ORDER BY created_at DESC",
+            (project_id, asset_type),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM generated_assets WHERE project_id = ? ORDER BY created_at DESC",
+            (project_id,),
+        ).fetchall()
+    conn.close()
+    return [GeneratedAsset(**dict(r)) for r in rows]
+
+
+def get_generated_asset(asset_id: str) -> Optional[GeneratedAsset]:
+    conn = get_db()
+    row = conn.execute("SELECT * FROM generated_assets WHERE id = ?", (asset_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return GeneratedAsset(**dict(row))
+
+
+def delete_generated_asset(asset_id: str) -> None:
+    conn = get_db()
+    conn.execute("DELETE FROM generated_assets WHERE id = ?", (asset_id,))
     conn.commit()
     conn.close()

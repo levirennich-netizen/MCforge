@@ -71,6 +71,30 @@ def music_library_dir() -> Path:
     return d
 
 
+def generated_dir(project_id: str) -> Path:
+    d = project_dir(project_id) / "generated"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def generated_images_dir(project_id: str) -> Path:
+    d = generated_dir(project_id) / "images"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def generated_sfx_dir(project_id: str) -> Path:
+    d = generated_dir(project_id) / "sfx"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def generated_intros_dir(project_id: str) -> Path:
+    d = generated_dir(project_id) / "intros"
+    d.mkdir(exist_ok=True)
+    return d
+
+
 def cleanup_project(project_id: str) -> None:
     """Delete all files for a project."""
     import shutil

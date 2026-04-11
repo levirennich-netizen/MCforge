@@ -135,6 +135,26 @@ async def analyze_image(
         return {"raw": content}
 
 
+async def generate_image(
+    prompt: str,
+    model: str = "grok-2-image",
+    n: int = 1,
+) -> list[bytes]:
+    """Generate images via Grok Aurora. Returns list of image bytes."""
+    async with _semaphore:
+        client = get_client()
+        response = await client.images.generate(
+            model=model,
+            prompt=prompt,
+            n=n,
+            response_format="b64_json",
+        )
+        results = []
+        for img_data in response.data:
+            results.append(base64.b64decode(img_data.b64_json))
+        return results
+
+
 async def generate_tts(
     text: str,
     voice_id: str = "rex",

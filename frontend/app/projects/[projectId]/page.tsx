@@ -23,6 +23,7 @@ const STEPS = [
   { key: "analyze", label: "Analyze" },
   { key: "edit", label: "Edit Timeline" },
   { key: "narration", label: "Narration" },
+  { key: "generate", label: "Generate" },
   { key: "export", label: "Export" },
 ];
 
@@ -200,6 +201,13 @@ export default function ProjectPage() {
                 className="w-full"
               >
                 Add Narration
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => router.push(`/projects/${projectId}/generate`)}
+                className="w-full"
+              >
+                Generate Assets
               </Button>
               <Button
                 variant="secondary"

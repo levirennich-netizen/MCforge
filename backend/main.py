@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from database import init_db
-from routers import analysis, chat, clips, export, narration, progress, projects, timeline
+from routers import analysis, chat, clips, export, generate, narration, progress, projects, timeline
 
 
 @asynccontextmanager
@@ -50,6 +50,7 @@ app.include_router(narration.router)
 app.include_router(export.router)
 app.include_router(progress.router)
 app.include_router(chat.router)
+app.include_router(generate.router)
 
 
 @app.get("/")
@@ -67,6 +68,7 @@ async def root():
             "export": "/projects/{id}/export",
             "progress": "/projects/{id}/progress (SSE)",
             "voices": "/tts/voices",
+            "generate": "/projects/{id}/generate/...",
         },
     }
 
