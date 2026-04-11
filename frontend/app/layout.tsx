@@ -60,21 +60,22 @@ export default function RootLayout({
         <div
           style={{
             position: "fixed",
-            bottom: "16px",
-            left: "16px",
+            bottom: "20px",
+            left: "20px",
             zIndex: 9999,
-            width: "36px",
-            height: "36px",
-            borderRadius: "8px",
-            backgroundColor: "rgba(16,185,129,0.15)",
-            border: "1px solid rgba(16,185,129,0.3)",
+            width: "52px",
+            height: "52px",
+            borderRadius: "12px",
+            backgroundColor: "#4aba3b",
+            border: "2px solid #5cd64d",
+            boxShadow: "0 0 16px rgba(74,186,59,0.4), 0 4px 12px rgba(0,0,0,0.5)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
           title="MCForge"
         >
-          <svg width="20" height="20" viewBox="0 0 8 8">
+          <svg width="32" height="32" viewBox="0 0 8 8">
             {/* Green background */}
             <rect x="0" y="0" width="8" height="8" fill="#4aba3b" />
             {/* Eyes - dark squares */}
