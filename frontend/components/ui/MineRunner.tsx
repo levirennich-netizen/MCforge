@@ -264,17 +264,19 @@ export function MineRunner() {
 
       ctx.shadowBlur = 0;
 
-      // Creeper face on the cube
-      const fPx = PLAYER_SIZE / 8;
-      ctx.fillStyle = "#052e16";
-      // Eyes
-      ctx.fillRect(-half + fPx * 1, -half + fPx * 1.5, fPx * 2, fPx * 2);
-      ctx.fillRect(-half + fPx * 5, -half + fPx * 1.5, fPx * 2, fPx * 2);
-      // Mouth
-      ctx.fillRect(-half + fPx * 3, -half + fPx * 3.5, fPx * 2, fPx * 1);
-      ctx.fillRect(-half + fPx * 2, -half + fPx * 4.5, fPx * 4, fPx * 1);
-      ctx.fillRect(-half + fPx * 2, -half + fPx * 5.5, fPx * 1.5, fPx * 1.5);
-      ctx.fillRect(-half + fPx * 4.5, -half + fPx * 5.5, fPx * 1.5, fPx * 1.5);
+      // Creeper face on the cube (big and bold)
+      ctx.fillStyle = "#000000";
+      const s = PLAYER_SIZE;
+      // Eyes (2 big squares)
+      ctx.fillRect(-half + s * 0.12, -half + s * 0.15, s * 0.28, s * 0.25);
+      ctx.fillRect(-half + s * 0.60, -half + s * 0.15, s * 0.28, s * 0.25);
+      // Mouth center column
+      ctx.fillRect(-half + s * 0.35, -half + s * 0.42, s * 0.30, s * 0.15);
+      // Mouth wide bar
+      ctx.fillRect(-half + s * 0.20, -half + s * 0.55, s * 0.60, s * 0.15);
+      // Mouth bottom legs
+      ctx.fillRect(-half + s * 0.20, -half + s * 0.68, s * 0.20, s * 0.18);
+      ctx.fillRect(-half + s * 0.60, -half + s * 0.68, s * 0.20, s * 0.18);
 
       ctx.restore();
     }
