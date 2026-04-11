@@ -1,0 +1,7 @@
+export interface ChatMessage {
+  id: string;
+  project_id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+}

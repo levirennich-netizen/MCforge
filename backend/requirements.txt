@@ -1,0 +1,14 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.18
+pydantic-settings>=2.7.0
+openai>=1.60.0
+httpx>=0.28.0
+scenedetect[opencv]>=0.6.5
+auditok>=0.3.0
+ffmpeg-python>=0.2.0
+faster-whisper>=1.1.0
+numpy>=2.0.0
+opencv-python-headless>=4.10.0
+sse-starlette>=2.2.0
+aiosqlite>=0.20.0
