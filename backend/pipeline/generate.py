@@ -115,10 +115,22 @@ COLOR_SCHEMES = {
 }
 
 
+def _escape_drawtext(text: str) -> str:
+    """Escape text for FFmpeg drawtext filter."""
+    text = text.replace("\\", "\\\\")
+    text = text.replace("'", "\u2019")  # Use right single quote to avoid escaping issues
+    text = text.replace(":", "\\:")
+    text = text.replace(";", "\\;")
+    text = text.replace(",", "\\,")
+    text = text.replace("[", "\\[")
+    text = text.replace("]", "\\]")
+    return text
+
+
 def _build_title_card_filter(title: str, subtitle: str, colors: dict, duration: float) -> str:
     """Build FFmpeg drawtext filter for title card animation."""
-    title_esc = title.replace("'", "\\'").replace(":", "\\:")
-    sub_esc = subtitle.replace("'", "\\'").replace(":", "\\:")
+    title_esc = _escape_drawtext(title)
+    sub_esc = _escape_drawtext(subtitle)
     tc = colors["title"]
     sc = colors["subtitle"]
 
@@ -141,8 +153,8 @@ def _build_title_card_filter(title: str, subtitle: str, colors: dict, duration: 
 
 def _build_lower_third_filter(title: str, subtitle: str, colors: dict, duration: float) -> str:
     """Build FFmpeg drawtext filter for lower third animation."""
-    title_esc = title.replace("'", "\\'").replace(":", "\\:")
-    sub_esc = subtitle.replace("'", "\\'").replace(":", "\\:")
+    title_esc = _escape_drawtext(title)
+    sub_esc = _escape_drawtext(subtitle)
     tc = colors["title"]
     sc = colors["subtitle"]
     ac = colors["accent"]
@@ -170,8 +182,8 @@ def _build_lower_third_filter(title: str, subtitle: str, colors: dict, duration:
 
 def _build_end_screen_filter(title: str, subtitle: str, colors: dict, duration: float) -> str:
     """Build FFmpeg drawtext filter for end screen animation."""
-    title_esc = title.replace("'", "\\'").replace(":", "\\:")
-    sub_esc = subtitle.replace("'", "\\'").replace(":", "\\:")
+    title_esc = _escape_drawtext(title)
+    sub_esc = _escape_drawtext(subtitle)
     tc = colors["title"]
     sc = colors["subtitle"]
 
@@ -251,14 +263,17 @@ async def run_generate_animated_intro(
 
     # Generate a thumbnail (grab frame at 1s)
     thumb_path = out_dir / f"{asset_id}_thumb.jpg"
-    thumb_cmd = [
-        settings.FFMPEG_PATH,
-        "-y", "-i", str(file_path),
-        "-ss", "1", "-vframes", "1",
-        "-vf", "scale=320:-1",
-        str(thumb_path),
-    ]
-    subprocess.run(thumb_cmd, capture_output=True, timeout=30)
+    try:
+        thumb_cmd = [
+            settings.FFMPEG_PATH,
+            "-y", "-i", str(file_path),
+            "-ss", "1", "-vframes", "1",
+            "-vf", "scale=320:-1",
+            str(thumb_path),
+        ]
+        subprocess.run(thumb_cmd, capture_output=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        pass  # Thumbnail is optional
 
     update_progress(job_id, project_id, 0.9, "Saving...", "generate_intro")
 

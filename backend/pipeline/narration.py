@@ -123,7 +123,7 @@ async def generate_narration(
         audio_bytes = await generate_tts(full_text, voice_id=voice_id)
     except Exception as e:
         raise RuntimeError(
-            f"Voice generation failed — xAI TTS requires API credits. "
+            f"Voice generation failed. "
             f"You can skip narration and go straight to Export. Error: {e}"
         )
 

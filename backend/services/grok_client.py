@@ -150,25 +150,32 @@ async def generate_image_pollinations(
         return response.content
 
 
+# Mapping from app voice IDs to edge-tts voice names
+_EDGE_VOICE_MAP = {
+    "rex": "en-US-GuyNeural",
+    "eve": "en-US-JennyNeural",
+    "sal": "en-US-AriaNeural",
+}
+
+
 async def generate_tts(
     text: str,
     voice_id: str = "rex",
     language: str = "en",
 ) -> bytes:
-    """Generate speech audio via Grok TTS API. Returns raw audio bytes."""
-    async with _semaphore:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                "https://api.x.ai/v1/audio/speech",
-                headers={
-                    "Authorization": f"Bearer {settings.XAI_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "grok-2-tts",
-                    "input": text,
-                    "voice": voice_id,
-                },
-            )
-            response.raise_for_status()
-            return response.content
+    """Generate speech audio via edge-tts (free, no API key). Returns MP3 bytes."""
+    import io
+    import edge_tts
+
+    voice = _EDGE_VOICE_MAP.get(voice_id, "en-US-GuyNeural")
+    communicate = edge_tts.Communicate(text, voice)
+
+    buffer = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            buffer.write(chunk["data"])
+
+    audio_bytes = buffer.getvalue()
+    if not audio_bytes:
+        raise RuntimeError(f"edge-tts returned no audio for voice '{voice}'")
+    return audio_bytes
