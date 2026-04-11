@@ -41,8 +41,11 @@ def extract_thumbnail(
         "-q:v", "3",
         str(output_path),
     ]
-    subprocess.run(cmd, capture_output=True, timeout=30)
-    return Path(output_path)
+    result = subprocess.run(cmd, capture_output=True, timeout=30)
+    out = Path(output_path)
+    if result.returncode != 0 or not out.exists():
+        raise RuntimeError(f"Thumbnail extraction failed: {result.stderr[:500] if result.stderr else 'unknown error'}")
+    return out
 
 
 def extract_audio(
@@ -63,8 +66,11 @@ def extract_audio(
     if mono:
         cmd.extend(["-ac", "1"])
     cmd.append(str(output_path))
-    subprocess.run(cmd, capture_output=True, timeout=120)
-    return Path(output_path)
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    out = Path(output_path)
+    if result.returncode != 0 or not out.exists():
+        raise RuntimeError(f"Audio extraction failed: {result.stderr[:500] if result.stderr else 'unknown error'}")
+    return out
 
 
 def extract_frame(
@@ -82,8 +88,11 @@ def extract_frame(
         "-q:v", "2",
         str(output_path),
     ]
-    subprocess.run(cmd, capture_output=True, timeout=30)
-    return Path(output_path)
+    result = subprocess.run(cmd, capture_output=True, timeout=30)
+    out = Path(output_path)
+    if result.returncode != 0 or not out.exists():
+        raise RuntimeError(f"Frame extraction failed at t={timestamp}: {result.stderr[:500] if result.stderr else 'unknown error'}")
+    return out
 
 
 def trim_clip(

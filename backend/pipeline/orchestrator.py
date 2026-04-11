@@ -22,39 +22,44 @@ async def run_analysis(project_id: str, job_id: str) -> None:
     db.update_project_status(project_id, "analyzing")
 
     total = len(clips)
-    for i, clip in enumerate(clips):
-        base_progress = i / total
-        step_size = 1.0 / total
+    try:
+        for i, clip in enumerate(clips):
+            base_progress = i / total
+            step_size = 1.0 / total
 
-        def make_callback(base, size):
-            def cb(msg):
-                update_progress(job_id, project_id, base + size * 0.5,
-                              f"Clip {i+1}/{total}: {msg}", "analyze")
-            return cb
+            def make_callback(base, size, idx=i):
+                def cb(msg):
+                    update_progress(job_id, project_id, base + size * 0.5,
+                                  f"Clip {idx+1}/{total}: {msg}", "analyze")
+                return cb
 
-        callback = make_callback(base_progress, step_size)
+            callback = make_callback(base_progress, step_size)
 
-        # Video analysis
-        video_analysis = await analyze_clip(
-            clip.id, clip.file_path, project_id, progress_callback=callback,
-        )
-
-        # Audio analysis
-        audio_analysis = None
-        if clip.audio_path:
-            audio_analysis = await analyze_clip_audio(
-                clip.id, clip.audio_path,
-                video_analysis=video_analysis,
-                whisper_model=settings.WHISPER_MODEL_SIZE,
-                progress_callback=callback,
+            # Video analysis
+            video_analysis = await analyze_clip(
+                clip.id, clip.file_path, project_id, progress_callback=callback,
             )
 
-        # Save results
-        db.save_analysis(clip.id, project_id, video_analysis, audio_analysis)
-        update_progress(
-            job_id, project_id, (i + 1) / total,
-            f"Analyzed clip {i+1}/{total}", "analyze",
-        )
+            # Audio analysis
+            audio_analysis = None
+            if clip.audio_path:
+                audio_analysis = await analyze_clip_audio(
+                    clip.id, clip.audio_path,
+                    video_analysis=video_analysis,
+                    whisper_model=settings.WHISPER_MODEL_SIZE,
+                    progress_callback=callback,
+                )
+
+            # Save results
+            db.save_analysis(clip.id, project_id, video_analysis, audio_analysis)
+            update_progress(
+                job_id, project_id, (i + 1) / total,
+                f"Analyzed clip {i+1}/{total}", "analyze",
+            )
+    except Exception:
+        # Reset project status so user can retry
+        db.update_project_status(project_id, "uploaded")
+        raise
 
 
 async def run_plan_generation(
