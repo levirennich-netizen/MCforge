@@ -6,10 +6,14 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    # xAI / Grok
+    # xAI / Grok (legacy)
     XAI_API_KEY: str = "xai-your-key-here"
     GROK_VISION_MODEL: str = "grok-2-vision-1212"
     GROK_CHAT_MODEL: str = "grok-3-fast-beta"
+
+    # Google Gemini (free tier)
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # Paths
     DATA_DIR: Path = Path("./data")

@@ -1,4 +1,4 @@
-"""Centralized xAI Grok API client wrapping the OpenAI SDK."""
+"""AI client — uses Google Gemini (free) with Grok fallback, via OpenAI SDK."""
 
 from __future__ import annotations
 
@@ -14,17 +14,37 @@ from openai import AsyncOpenAI
 from config import settings
 
 _client: Optional[AsyncOpenAI] = None
-_semaphore = asyncio.Semaphore(3)  # Limit concurrent API calls
+_semaphore = asyncio.Semaphore(3)
 
 
 def get_client() -> AsyncOpenAI:
+    """Get the AI client — prefers Gemini (free), falls back to Grok."""
     global _client
     if _client is None:
-        _client = AsyncOpenAI(
-            api_key=settings.XAI_API_KEY,
-            base_url="https://api.x.ai/v1",
-        )
+        if settings.GEMINI_API_KEY:
+            _client = AsyncOpenAI(
+                api_key=settings.GEMINI_API_KEY,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            )
+        else:
+            _client = AsyncOpenAI(
+                api_key=settings.XAI_API_KEY,
+                base_url="https://api.x.ai/v1",
+            )
     return _client
+
+
+def _chat_model() -> str:
+    """Return the model name based on which provider is configured."""
+    if settings.GEMINI_API_KEY:
+        return settings.GEMINI_MODEL
+    return settings.GROK_CHAT_MODEL
+
+
+def _vision_model() -> str:
+    if settings.GEMINI_API_KEY:
+        return settings.GEMINI_MODEL  # Gemini flash supports vision
+    return settings.GROK_VISION_MODEL
 
 
 async def chat_completion(
@@ -35,11 +55,11 @@ async def chat_completion(
     temperature: float = 0.7,
     max_tokens: int = 4096,
 ) -> dict:
-    """Send a chat completion request to Grok."""
+    """Send a chat completion request."""
     async with _semaphore:
         client = get_client()
         kwargs: dict[str, Any] = {
-            "model": model or settings.GROK_CHAT_MODEL,
+            "model": model or _chat_model(),
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
@@ -51,7 +71,6 @@ async def chat_completion(
         response = await client.chat.completions.create(**kwargs)
         msg = response.choices[0].message
 
-        # If function calling was used, extract the function args
         if msg.tool_calls:
             tool_call = msg.tool_calls[0]
             return {
@@ -76,7 +95,7 @@ async def chat_completion_stream(
     async with _semaphore:
         client = get_client()
         stream = await client.chat.completions.create(
-            model=model or settings.GROK_CHAT_MODEL,
+            model=model or _chat_model(),
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -93,15 +112,14 @@ async def analyze_image(
     prompt: str,
     model: Optional[str] = None,
 ) -> dict:
-    """Send an image to Grok Vision for analysis."""
+    """Send an image to AI vision for analysis."""
     async with _semaphore:
-        # Read and encode image
         image_data = Path(image_path).read_bytes()
         b64 = base64.b64encode(image_data).decode("utf-8")
 
         client = get_client()
         response = await client.chat.completions.create(
-            model=model or settings.GROK_VISION_MODEL,
+            model=model or _vision_model(),
             messages=[
                 {
                     "role": "user",
@@ -122,9 +140,7 @@ async def analyze_image(
         )
         content = response.choices[0].message.content or ""
 
-        # Try to parse JSON from the response
         try:
-            # Find JSON in the response
             start = content.find("{")
             end = content.rfind("}") + 1
             if start >= 0 and end > start:
