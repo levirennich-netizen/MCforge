@@ -70,6 +70,14 @@ const config: Config = {
           "0%": { opacity: "1", transform: "translateX(0)" },
           "100%": { opacity: "0", transform: "translateX(100%)" },
         },
+        "float-slow": {
+          "0%, 100%": { transform: "translateY(0) scale(1)" },
+          "50%": { transform: "translateY(-20px) scale(1.05)" },
+        },
+        "float-slower": {
+          "0%, 100%": { transform: "translateY(0) scale(1)" },
+          "50%": { transform: "translateY(-15px) scale(0.95)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.4s ease-out forwards",
@@ -83,6 +91,8 @@ const config: Config = {
         "glow-pulse": "glow-pulse 3s ease-in-out infinite",
         "slide-in-right": "slide-in-right 0.3s ease-out forwards",
         "slide-out-right": "slide-out-right 0.2s ease-in forwards",
+        "float-slow": "float-slow 8s ease-in-out infinite",
+        "float-slower": "float-slower 12s ease-in-out infinite",
       },
       boxShadow: {
         glow: "0 0 12px var(--accent-glow)",
