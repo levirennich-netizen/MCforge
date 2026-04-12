@@ -160,9 +160,21 @@ async def analyze_image(
         return {"raw": content}
 
 
+async def _fetch_image_with_retry(prompt: str, width: int = 1920, height: int = 1080, retries: int = 3) -> bytes:
+    """Fetch a single image with retries and longer timeout."""
+    import asyncio
+    for attempt in range(retries):
+        try:
+            return await generate_image_pollinations(prompt, width=width, height=height)
+        except Exception:
+            if attempt < retries - 1:
+                await asyncio.sleep(2 * (attempt + 1))
+    return b""
+
+
 async def generate_video_pollinations(
     prompt: str,
-    model: str = "seedance",
+    model: str = "cinematic",
     duration: int = 5,
 ) -> bytes:
     """Generate a video from AI images + FFmpeg Ken Burns effects (free).
@@ -171,7 +183,6 @@ async def generate_video_pollinations(
     then combines them into a cinematic video with zoom/pan transitions.
     """
     import asyncio
-    import subprocess
     import tempfile
     from config import settings
 
@@ -191,16 +202,18 @@ async def generate_video_pollinations(
         f"{prompt}, epic scene",
     ]
 
-    # Generate images concurrently (free, no API key)
-    tasks = [
-        generate_image_pollinations(variations[i % len(variations)], width=1920, height=1080)
-        for i in range(num_images)
-    ]
-    image_results = await asyncio.gather(*tasks, return_exceptions=True)
-    image_bytes_list = [r for r in image_results if isinstance(r, bytes) and len(r) > 1000]
+    # Generate images one at a time to avoid rate limits
+    image_bytes_list: list[bytes] = []
+    for i in range(num_images):
+        img = await _fetch_image_with_retry(variations[i % len(variations)])
+        if img and len(img) > 1000:
+            image_bytes_list.append(img)
+        # Small delay between requests to avoid rate limiting
+        if i < num_images - 1:
+            await asyncio.sleep(1)
 
     if len(image_bytes_list) < 2:
-        raise RuntimeError("Failed to generate enough images for video")
+        raise RuntimeError(f"Failed to generate enough images for video (got {len(image_bytes_list)}/{num_images})")
 
     # Write images to temp dir and build video with FFmpeg
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -286,9 +299,11 @@ async def generate_image_pollinations(
 ) -> bytes:
     """Generate an image via Pollinations.ai (free, no API key needed)."""
     import urllib.parse
+    import random
     encoded = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true"
-    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+    seed = random.randint(1, 999999)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&seed={seed}"
+    async with httpx.AsyncClient(timeout=180.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
         return response.content
