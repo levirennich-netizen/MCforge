@@ -311,18 +311,15 @@ VIDEO_STYLE_HINTS = {
 
 async def run_generate_video(
     project_id: str, job_id: str, prompt: str,
-    model: str = "seedance", duration: int = 5,
+    model: str = "cinematic", duration: int = 5,
 ) -> GeneratedAsset:
-    """Generate a video using Pollinations.ai (free)."""
+    """Generate a video from AI images + Ken Burns effects (free)."""
     from services.grok_client import generate_video_pollinations
     from services.file_manager import generated_videos_dir
 
-    update_progress(job_id, project_id, 0.1, "Generating video...", "generate_video")
-
-    # Enhance prompt with Minecraft style
     enhanced = f"{VIDEO_STYLE_HINTS.get('minecraft', '')}{prompt}"
 
-    update_progress(job_id, project_id, 0.2, f"Calling AI video model ({model})...", "generate_video")
+    update_progress(job_id, project_id, 0.1, "Generating AI images...", "generate_video")
     video_bytes = await generate_video_pollinations(enhanced, model=model, duration=duration)
 
     if not video_bytes or len(video_bytes) < 1000:
@@ -337,20 +334,15 @@ async def run_generate_video(
 
     file_size = len(video_bytes)
 
-    # Extract thumbnail
     thumb_path = out_dir / f"{asset_id}_thumb.jpg"
     try:
-        thumb_cmd = [
-            "ffmpeg", "-y", "-i", str(file_path),
-            "-ss", "1", "-vframes", "1",
-            "-vf", "scale=320:-1",
+        subprocess.run([
+            settings.FFMPEG_PATH, "-y", "-i", str(file_path),
+            "-ss", "1", "-vframes", "1", "-vf", "scale=320:-1",
             str(thumb_path),
-        ]
-        subprocess.run(thumb_cmd, capture_output=True, timeout=30)
+        ], capture_output=True, timeout=30)
     except (subprocess.TimeoutExpired, OSError):
         pass
-
-    update_progress(job_id, project_id, 0.9, "Saving...", "generate_video")
 
     asset = GeneratedAsset(
         id=asset_id,
@@ -362,7 +354,7 @@ async def run_generate_video(
         thumbnail_path=str(thumb_path) if thumb_path.exists() else "",
         duration_seconds=float(duration),
         file_size_bytes=file_size,
-        metadata_json=json.dumps({"model": model, "duration": duration}),
+        metadata_json=json.dumps({"style": model, "duration": duration}),
     )
     db.create_generated_asset(asset)
 
@@ -372,26 +364,24 @@ async def run_generate_video(
 
 async def run_generate_video_pair(
     project_id: str, job_id: str, prompt: str,
-    model: str = "seedance", duration: int = 5,
+    model: str = "cinematic", duration: int = 5,
 ) -> list[GeneratedAsset]:
-    """Generate 2 video options concurrently for the AI builder voting flow."""
-    import asyncio
+    """Generate 2 video options for the AI builder voting flow."""
     from services.grok_client import generate_video_pollinations
     from services.file_manager import generated_videos_dir
 
-    update_progress(job_id, project_id, 0.1, "Generating 2 video options...", "generate_video_pair")
+    update_progress(job_id, project_id, 0.05, "Generating AI images for option A...", "generate_video_pair")
 
     base_prompt = f"{VIDEO_STYLE_HINTS.get('minecraft', '')}{prompt}"
-    prompt_a = f"{base_prompt}, version A"
-    prompt_b = f"{base_prompt}, version B, different angle"
 
-    update_progress(job_id, project_id, 0.2, f"Calling AI video model ({model}) x2...", "generate_video_pair")
-    bytes_a, bytes_b = await asyncio.gather(
-        generate_video_pollinations(prompt_a, model=model, duration=duration),
-        generate_video_pollinations(prompt_b, model=model, duration=duration),
-    )
+    # Generate sequentially to show progress per option
+    update_progress(job_id, project_id, 0.1, "Creating option A...", "generate_video_pair")
+    bytes_a = await generate_video_pollinations(f"{base_prompt}, version A", model=model, duration=duration)
 
-    update_progress(job_id, project_id, 0.8, "Saving videos...", "generate_video_pair")
+    update_progress(job_id, project_id, 0.5, "Creating option B...", "generate_video_pair")
+    bytes_b = await generate_video_pollinations(f"{base_prompt}, version B, different angle", model=model, duration=duration)
+
+    update_progress(job_id, project_id, 0.9, "Saving videos...", "generate_video_pair")
 
     out_dir = generated_videos_dir(project_id)
     assets = []
@@ -407,7 +397,7 @@ async def run_generate_video_pair(
         thumb_path = out_dir / f"{asset_id}_thumb.jpg"
         try:
             subprocess.run([
-                "ffmpeg", "-y", "-i", str(file_path),
+                settings.FFMPEG_PATH, "-y", "-i", str(file_path),
                 "-ss", "1", "-vframes", "1", "-vf", "scale=320:-1",
                 str(thumb_path),
             ], capture_output=True, timeout=30)
@@ -424,7 +414,7 @@ async def run_generate_video_pair(
             thumbnail_path=str(thumb_path) if thumb_path.exists() else "",
             duration_seconds=float(duration),
             file_size_bytes=len(video_bytes),
-            metadata_json=json.dumps({"model": model, "duration": duration, "option": label}),
+            metadata_json=json.dumps({"style": model, "duration": duration, "option": label}),
         )
         db.create_generated_asset(asset)
         assets.append(asset)

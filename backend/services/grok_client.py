@@ -165,21 +165,118 @@ async def generate_video_pollinations(
     model: str = "seedance",
     duration: int = 5,
 ) -> bytes:
-    """Generate a video via Pollinations.ai. Returns MP4 bytes."""
-    import urllib.parse
+    """Generate a video from AI images + FFmpeg Ken Burns effects (free).
+
+    Generates multiple AI images via Pollinations (free, no key needed),
+    then combines them into a cinematic video with zoom/pan transitions.
+    """
+    import asyncio
+    import subprocess
+    import tempfile
     from config import settings
 
-    encoded = urllib.parse.quote(prompt)
-    params = f"model={model}&duration={duration}&nologo=true&safe=false"
-    api_key = getattr(settings, "POLLINATIONS_API_KEY", "")
-    if api_key:
-        params += f"&key={api_key}"
+    # Generate more images for longer videos
+    num_images = max(3, duration // 2)
+    secs_per_image = duration / num_images
 
-    url = f"https://gen.pollinations.ai/video/{encoded}?{params}"
-    async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.content
+    # Create varied prompts for each frame
+    variations = [
+        prompt,
+        f"{prompt}, different angle",
+        f"{prompt}, close-up shot",
+        f"{prompt}, wide establishing shot",
+        f"{prompt}, dramatic lighting",
+        f"{prompt}, aerial view",
+        f"{prompt}, action moment",
+        f"{prompt}, epic scene",
+    ]
+
+    # Generate images concurrently (free, no API key)
+    tasks = [
+        generate_image_pollinations(variations[i % len(variations)], width=1920, height=1080)
+        for i in range(num_images)
+    ]
+    image_results = await asyncio.gather(*tasks, return_exceptions=True)
+    image_bytes_list = [r for r in image_results if isinstance(r, bytes) and len(r) > 1000]
+
+    if len(image_bytes_list) < 2:
+        raise RuntimeError("Failed to generate enough images for video")
+
+    # Write images to temp dir and build video with FFmpeg
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img_paths = []
+        for i, img_bytes in enumerate(image_bytes_list):
+            path = Path(tmpdir) / f"img_{i:03d}.jpg"
+            path.write_bytes(img_bytes)
+            img_paths.append(path)
+
+        output_path = Path(tmpdir) / "output.mp4"
+        _build_kenburns_video(img_paths, output_path, secs_per_image, settings.FFMPEG_PATH)
+        return output_path.read_bytes()
+
+
+def _build_kenburns_video(
+    img_paths: list[Path], output_path: Path,
+    secs_per_image: float, ffmpeg_path: str,
+) -> None:
+    """Build a Ken Burns video from images using FFmpeg."""
+    import subprocess
+
+    # Ken Burns effects: alternate between zoom-in and zoom-out with panning
+    effects = [
+        "zoompan=z='min(zoom+0.0015,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
+        "zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.0015))':x='iw/2-(iw/zoom/2)':y='ih/3-(ih/zoom/3)':d={d}:s=1920x1080:fps=30",
+        "zoompan=z='min(zoom+0.001,1.2)':x='iw/4-(iw/zoom/4)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
+        "zoompan=z='min(zoom+0.002,1.4)':x='iw*3/4-(iw/zoom*3/4)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
+    ]
+
+    frames_per_image = int(secs_per_image * 30)
+    crossfade_frames = min(15, frames_per_image // 3)  # 0.5s crossfade
+    crossfade_secs = crossfade_frames / 30
+
+    # Build filter graph
+    inputs = []
+    filter_parts = []
+
+    for i, img_path in enumerate(img_paths):
+        inputs.extend(["-loop", "1", "-t", str(secs_per_image + 1), "-i", str(img_path)])
+        effect = effects[i % len(effects)].format(d=frames_per_image + 30)
+        filter_parts.append(f"[{i}:v]{effect},setpts=PTS-STARTPTS[v{i}]")
+
+    # Chain crossfades between all segments
+    if len(img_paths) == 1:
+        filter_parts.append(f"[v0]null[outv]")
+    else:
+        # First crossfade
+        filter_parts.append(
+            f"[v0][v1]xfade=transition=fade:duration={crossfade_secs}:offset={secs_per_image - crossfade_secs}[xf0]"
+        )
+        # Chain remaining crossfades
+        for i in range(2, len(img_paths)):
+            prev = f"xf{i-2}"
+            curr_offset = secs_per_image * i - crossfade_secs * i
+            filter_parts.append(
+                f"[{prev}][v{i}]xfade=transition=fade:duration={crossfade_secs}:offset={curr_offset}[xf{i-1}]"
+            )
+        last_label = f"xf{len(img_paths)-2}"
+        filter_parts.append(f"[{last_label}]null[outv]")
+
+    filter_complex = ";\n".join(filter_parts)
+
+    cmd = [
+        ffmpeg_path, "-y",
+        *inputs,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-r", "30",
+        "-t", str(secs_per_image * len(img_paths)),
+        str(output_path),
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg Ken Burns failed: {result.stderr.decode()[:500]}")
 
 
 async def generate_image_pollinations(

@@ -13,10 +13,10 @@ import { ProgressBar } from "@/components/ui/ProgressBar";
 
 type Phase = "prompt" | "generating" | "voting" | "deciding" | "finishing";
 
-const MODELS = [
-  { value: "seedance", label: "Seedance", desc: "Best quality" },
-  { value: "wan-fast", label: "Wan Fast", desc: "Fast" },
-  { value: "wan", label: "Wan", desc: "Balanced" },
+const STYLES = [
+  { value: "cinematic", label: "Cinematic", desc: "Dramatic shots" },
+  { value: "minecraft", label: "Minecraft", desc: "Game style" },
+  { value: "timelapse", label: "Timelapse", desc: "Building feel" },
 ];
 
 interface Props {
@@ -28,7 +28,7 @@ interface Props {
 export function AIBuilderPanel({ projectId, onDone, onCancel }: Props) {
   const [phase, setPhase] = useState<Phase>("prompt");
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState("seedance");
+  const [model, setModel] = useState("cinematic");
   const [duration, setDuration] = useState(5);
 
   const [pairOptions, setPairOptions] = useState<GeneratedAsset[]>([]);
@@ -147,7 +147,7 @@ export function AIBuilderPanel({ projectId, onDone, onCancel }: Props) {
           />
 
           <div className="flex gap-2">
-            {MODELS.map((m) => (
+            {STYLES.map((m) => (
               <button
                 key={m.value}
                 onClick={() => setModel(m.value)}
