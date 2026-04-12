@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
+    # Pollinations.ai (video generation)
+    POLLINATIONS_API_KEY: str = ""
+
     # Paths
     DATA_DIR: Path = Path("./data")
     FFMPEG_PATH: str = "ffmpeg"

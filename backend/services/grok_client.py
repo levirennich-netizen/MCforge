@@ -165,10 +165,17 @@ async def generate_video_pollinations(
     model: str = "seedance",
     duration: int = 5,
 ) -> bytes:
-    """Generate a video via Pollinations.ai (free, no API key needed). Returns MP4 bytes."""
+    """Generate a video via Pollinations.ai. Returns MP4 bytes."""
     import urllib.parse
+    from config import settings
+
     encoded = urllib.parse.quote(prompt)
-    url = f"https://gen.pollinations.ai/video/{encoded}?model={model}&duration={duration}"
+    params = f"model={model}&duration={duration}&nologo=true&safe=false"
+    api_key = getattr(settings, "POLLINATIONS_API_KEY", "")
+    if api_key:
+        params += f"&key={api_key}"
+
+    url = f"https://gen.pollinations.ai/image/{encoded}?{params}"
     async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
