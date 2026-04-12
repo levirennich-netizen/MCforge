@@ -18,6 +18,7 @@ import { Skeleton, SkeletonClip } from "@/components/ui/Skeleton";
 import { DropZone } from "@/components/upload/DropZone";
 import { ClipCard } from "@/components/upload/ClipCard";
 import { HighlightCard } from "@/components/analysis/HighlightCard";
+import { AIBuilderPanel } from "@/components/ai-builder/AIBuilderPanel";
 
 const STEPS = [
   { key: "upload", label: "Upload" },
@@ -39,6 +40,7 @@ export default function ProjectPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [exports, setExports] = useState<ExportRecord[]>([]);
   const [videoPrompt, setVideoPrompt] = useState("");
+  const [aiMode, setAiMode] = useState(false);
 
   useJobProgress(projectId);
 
@@ -176,7 +178,7 @@ export default function ProjectPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upload Section */}
+        {/* Upload / AI Builder Section */}
         <div className="lg:col-span-2">
           {/* Video Player — shows latest export */}
           {exports.length > 0 && (
@@ -205,26 +207,57 @@ export default function ProjectPage() {
             </div>
           )}
 
-          <h3 className="text-base font-semibold mb-4 text-foreground/80">
-            Clips <span className="text-muted/50 font-normal">({clips.length})</span>
-          </h3>
+          {aiMode ? (
+            <AIBuilderPanel
+              projectId={projectId}
+              onDone={(newClips) => {
+                for (const c of newClips) addClip(c);
+                setAiMode(false);
+              }}
+              onCancel={() => setAiMode(false)}
+            />
+          ) : (
+            <>
+              {/* Completely with AI button */}
+              <button
+                onClick={() => setAiMode(true)}
+                className="w-full mb-4 px-4 py-3 rounded-xl border border-dashed border-purple-500/30 bg-purple-500/[0.04] hover:bg-purple-500/[0.08] hover:border-purple-500/50 transition-all duration-300 group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center group-hover:bg-purple-500/20 transition-colors">
+                    <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                    </svg>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-purple-300">Completely with AI</p>
+                    <p className="text-xs text-muted/60">No footage needed — AI generates everything</p>
+                  </div>
+                </div>
+              </button>
 
-          <DropZone
-            onFiles={handleUpload}
-            uploading={uploading}
-            progress={uploadProgress}
-            accept=".mp4,.mov,.mkv,.avi,.webm"
-            label="Drop Minecraft clips here or click to browse"
-            sublabel="MP4, MOV, MKV, AVI, WebM"
-          />
+              <h3 className="text-base font-semibold mb-4 text-foreground/80">
+                Clips <span className="text-muted/50 font-normal">({clips.length})</span>
+              </h3>
 
-          <div className="space-y-2.5 mt-4">
-            {clips.map((clip, i) => (
-              <div key={clip.id} className="animate-fade-in opacity-0" style={{ animationDelay: `${i * 60}ms` }}>
-                <ClipCard clip={clip} projectId={projectId} />
+              <DropZone
+                onFiles={handleUpload}
+                uploading={uploading}
+                progress={uploadProgress}
+                accept=".mp4,.mov,.mkv,.avi,.webm"
+                label="Drop Minecraft clips here or click to browse"
+                sublabel="MP4, MOV, MKV, AVI, WebM"
+              />
+
+              <div className="space-y-2.5 mt-4">
+                {clips.map((clip, i) => (
+                  <div key={clip.id} className="animate-fade-in opacity-0" style={{ animationDelay: `${i * 60}ms` }}>
+                    <ClipCard clip={clip} projectId={projectId} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
 
         {/* Actions Panel */}

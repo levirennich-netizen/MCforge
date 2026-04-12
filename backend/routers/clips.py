@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import shutil
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 import database as db
 from models import ClipMetadata
@@ -48,6 +51,41 @@ async def upload_clip(
     db.create_clip(clip)
 
     # Update project status
+    db.update_project_status(project_id, "uploading")
+
+    return clip
+
+
+class ClipFromGeneratedRequest(BaseModel):
+    asset_id: str
+
+
+@router.post("/projects/{project_id}/clips/from-generated", response_model=ClipMetadata)
+async def clip_from_generated(project_id: str, req: ClipFromGeneratedRequest):
+    """Convert an AI-generated video asset into a real clip."""
+    project = db.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    asset = db.get_generated_asset(req.asset_id)
+    if not asset or asset.project_id != project_id:
+        raise HTTPException(404, "Generated asset not found")
+
+    src = Path(asset.file_path)
+    if not src.exists():
+        raise HTTPException(404, "Generated video file not found")
+
+    # Copy to uploads dir
+    save_dir = uploads_dir(project_id)
+    existing = list(save_dir.glob("*.mp4"))
+    save_name = f"ai_clip_{len(existing) + 1:03d}.mp4"
+    save_path = save_dir / save_name
+    shutil.copy2(str(src), str(save_path))
+
+    # Ingest: extract metadata, thumbnail, audio
+    clips = db.get_clips(project_id)
+    clip = await ingest_clip(project_id, save_path, save_name, len(clips))
+    db.create_clip(clip)
     db.update_project_status(project_id, "uploading")
 
     return clip

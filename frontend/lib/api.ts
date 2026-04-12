@@ -296,6 +296,12 @@ export async function streamChatMessage(
 export const generateVideo = (projectId: string, prompt: string, model: string = "seedance", duration: number = 5) =>
   post<{ job_id: string }>(`/projects/${projectId}/generate/video`, { prompt, model, duration });
 
+export const generateVideoPair = (projectId: string, prompt: string, model: string = "seedance", duration: number = 5) =>
+  post<{ job_id: string }>(`/projects/${projectId}/generate/video-pair`, { prompt, model, duration });
+
+export const clipFromGenerated = (projectId: string, assetId: string) =>
+  post<ClipMetadata>(`/projects/${projectId}/clips/from-generated`, { asset_id: assetId });
+
 export const generateImage = (projectId: string, prompt: string, style: ImageStyle = "minecraft") =>
   post<{ job_id: string }>(`/projects/${projectId}/generate/image`, { prompt, style });
 

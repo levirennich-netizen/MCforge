@@ -368,3 +368,66 @@ async def run_generate_video(
 
     update_progress(job_id, project_id, 1.0, "Video generated!", "generate_video")
     return asset
+
+
+async def run_generate_video_pair(
+    project_id: str, job_id: str, prompt: str,
+    model: str = "seedance", duration: int = 5,
+) -> list[GeneratedAsset]:
+    """Generate 2 video options concurrently for the AI builder voting flow."""
+    import asyncio
+    from services.grok_client import generate_video_pollinations
+    from services.file_manager import generated_videos_dir
+
+    update_progress(job_id, project_id, 0.1, "Generating 2 video options...", "generate_video_pair")
+
+    base_prompt = f"{VIDEO_STYLE_HINTS.get('minecraft', '')}{prompt}"
+    prompt_a = f"{base_prompt}, version A"
+    prompt_b = f"{base_prompt}, version B, different angle"
+
+    update_progress(job_id, project_id, 0.2, f"Calling AI video model ({model}) x2...", "generate_video_pair")
+    bytes_a, bytes_b = await asyncio.gather(
+        generate_video_pollinations(prompt_a, model=model, duration=duration),
+        generate_video_pollinations(prompt_b, model=model, duration=duration),
+    )
+
+    update_progress(job_id, project_id, 0.8, "Saving videos...", "generate_video_pair")
+
+    out_dir = generated_videos_dir(project_id)
+    assets = []
+
+    for i, (video_bytes, label) in enumerate([(bytes_a, "A"), (bytes_b, "B")]):
+        if not video_bytes or len(video_bytes) < 1000:
+            continue
+
+        asset_id = new_id("gen_")
+        file_path = out_dir / f"{asset_id}.mp4"
+        file_path.write_bytes(video_bytes)
+
+        thumb_path = out_dir / f"{asset_id}_thumb.jpg"
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", str(file_path),
+                "-ss", "1", "-vframes", "1", "-vf", "scale=320:-1",
+                str(thumb_path),
+            ], capture_output=True, timeout=30)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+        asset = GeneratedAsset(
+            id=asset_id,
+            project_id=project_id,
+            asset_type=GenerateAssetType.VIDEO,
+            name=f"Option {label}: {prompt[:50]}",
+            prompt=prompt,
+            file_path=str(file_path),
+            thumbnail_path=str(thumb_path) if thumb_path.exists() else "",
+            duration_seconds=float(duration),
+            file_size_bytes=len(video_bytes),
+            metadata_json=json.dumps({"model": model, "duration": duration, "option": label}),
+        )
+        db.create_generated_asset(asset)
+        assets.append(asset)
+
+    update_progress(job_id, project_id, 1.0, "2 options ready — pick your favorite!", "generate_video_pair")
+    return assets

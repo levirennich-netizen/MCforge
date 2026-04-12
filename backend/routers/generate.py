@@ -17,7 +17,7 @@ from models import (
     GenerateVideoRequest,
     JobType,
 )
-from pipeline.generate import run_generate_image, run_generate_sfx, run_generate_animated_intro, run_generate_video
+from pipeline.generate import run_generate_image, run_generate_sfx, run_generate_animated_intro, run_generate_video, run_generate_video_pair
 from services.job_queue import enqueue_job
 
 router = APIRouter(tags=["generate"])
@@ -89,6 +89,24 @@ async def generate_video(project_id: str, req: GenerateVideoRequest):
         project_id=project_id,
         job_type=JobType.GENERATE_VIDEO,
         task_fn=run_generate_video,
+        prompt=req.prompt,
+        model=req.model,
+        duration=req.duration,
+    )
+    return {"job_id": job.id, "status": "queued"}
+
+
+@router.post("/projects/{project_id}/generate/video-pair")
+async def generate_video_pair(project_id: str, req: GenerateVideoRequest):
+    """Generate 2 AI video options for the voting flow."""
+    project = db.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    job = await enqueue_job(
+        project_id=project_id,
+        job_type=JobType.GENERATE_VIDEO_PAIR,
+        task_fn=run_generate_video_pair,
         prompt=req.prompt,
         model=req.model,
         duration=req.duration,

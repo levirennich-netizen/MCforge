@@ -46,6 +46,7 @@ class JobType(str, Enum):
     GENERATE_SFX = "generate_sfx"
     GENERATE_INTRO = "generate_intro"
     GENERATE_VIDEO = "generate_video"
+    GENERATE_VIDEO_PAIR = "generate_video_pair"
 
 
 class JobStatus(str, Enum):
