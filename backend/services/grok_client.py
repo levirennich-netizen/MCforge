@@ -175,7 +175,7 @@ async def generate_video_pollinations(
     if api_key:
         params += f"&key={api_key}"
 
-    url = f"https://gen.pollinations.ai/image/{encoded}?{params}"
+    url = f"https://gen.pollinations.ai/video/{encoded}?{params}"
     async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
         response = await client.get(url)
         response.raise_for_status()
