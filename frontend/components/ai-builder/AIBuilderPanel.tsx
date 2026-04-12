@@ -64,8 +64,9 @@ export function AIBuilderPanel({ projectId, onDone, onCancel }: Props) {
       await generateVideoPair(projectId, prompt.trim(), model, duration);
       setPhase("generating");
       toast.info("Generating 2 options...");
-    } catch {
-      toast.error("Failed to start generation");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to start generation";
+      toast.error(msg);
     }
   };
 

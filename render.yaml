@@ -8,8 +8,10 @@ services:
     envVars:
       - key: XAI_API_KEY
         sync: false
+      - key: POLLINATIONS_API_KEY
+        sync: false
       - key: CORS_ORIGINS
-        value: '["https://frontend-delta-six-63.vercel.app","http://localhost:3000"]'
+        value: '["*"]'
       - key: DATA_DIR
         value: /app/data
       - key: PORT

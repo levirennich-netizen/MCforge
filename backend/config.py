@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # Pollinations.ai (video generation)
-    POLLINATIONS_API_KEY: str = ""
+    POLLINATIONS_API_KEY: str = "sk_GttgHt7kIAymC3qf8TBbbzwWId1M4u32"
 
     # Paths
     DATA_DIR: Path = Path("./data")
