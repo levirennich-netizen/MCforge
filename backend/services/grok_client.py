@@ -232,64 +232,70 @@ def _build_kenburns_video(
     img_paths: list[Path], output_path: Path,
     secs_per_image: float, ffmpeg_path: str,
 ) -> None:
-    """Build a Ken Burns video from images using FFmpeg."""
+    """Build a Ken Burns video from images using FFmpeg.
+
+    Simple approach: render each image as a clip with zoompan, then concat.
+    """
     import subprocess
 
-    # Ken Burns effects: alternate between zoom-in and zoom-out with panning
-    effects = [
-        "zoompan=z='min(zoom+0.0015,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
-        "zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.0015))':x='iw/2-(iw/zoom/2)':y='ih/3-(ih/zoom/3)':d={d}:s=1920x1080:fps=30",
-        "zoompan=z='min(zoom+0.001,1.2)':x='iw/4-(iw/zoom/4)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
-        "zoompan=z='min(zoom+0.002,1.4)':x='iw*3/4-(iw/zoom*3/4)':y='ih/2-(ih/zoom/2)':d={d}:s=1920x1080:fps=30",
+    tmpdir = output_path.parent
+    clip_paths = []
+
+    # Step 1: Render each image as a short video clip with zoom effect
+    zoom_styles = [
+        # Slow zoom in to center
+        "zoompan=z='min(zoom+0.0015,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
+        # Slow zoom in from top-left
+        "zoompan=z='min(zoom+0.001,1.2)':x='iw/4-(iw/zoom/4)':y='ih/4-(ih/zoom/4)'",
+        # Slow zoom in from right
+        "zoompan=z='min(zoom+0.002,1.3)':x='iw*3/4-(iw/zoom*3/4)':y='ih/2-(ih/zoom/2)'",
     ]
 
-    frames_per_image = int(secs_per_image * 30)
-    crossfade_frames = min(15, frames_per_image // 3)  # 0.5s crossfade
-    crossfade_secs = crossfade_frames / 30
-
-    # Build filter graph
-    inputs = []
-    filter_parts = []
+    frames = int(secs_per_image * 25)
 
     for i, img_path in enumerate(img_paths):
-        inputs.extend(["-loop", "1", "-t", str(secs_per_image + 1), "-i", str(img_path)])
-        effect = effects[i % len(effects)].format(d=frames_per_image + 30)
-        filter_parts.append(f"[{i}:v]{effect},setpts=PTS-STARTPTS[v{i}]")
+        clip_path = tmpdir / f"clip_{i:03d}.mp4"
+        zoom = zoom_styles[i % len(zoom_styles)]
+        vf = f"{zoom}:d={frames}:s=1280x720:fps=25"
 
-    # Chain crossfades between all segments
-    if len(img_paths) == 1:
-        filter_parts.append(f"[v0]null[outv]")
-    else:
-        # First crossfade
-        filter_parts.append(
-            f"[v0][v1]xfade=transition=fade:duration={crossfade_secs}:offset={secs_per_image - crossfade_secs}[xf0]"
-        )
-        # Chain remaining crossfades
-        for i in range(2, len(img_paths)):
-            prev = f"xf{i-2}"
-            curr_offset = secs_per_image * i - crossfade_secs * i
-            filter_parts.append(
-                f"[{prev}][v{i}]xfade=transition=fade:duration={crossfade_secs}:offset={curr_offset}[xf{i-1}]"
-            )
-        last_label = f"xf{len(img_paths)-2}"
-        filter_parts.append(f"[{last_label}]null[outv]")
+        cmd = [
+            ffmpeg_path, "-y",
+            "-loop", "1", "-i", str(img_path),
+            "-vf", vf,
+            "-t", str(secs_per_image),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            str(clip_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        if result.returncode == 0 and clip_path.exists():
+            clip_paths.append(clip_path)
 
-    filter_complex = ";\n".join(filter_parts)
+    if not clip_paths:
+        raise RuntimeError("FFmpeg failed to render any clips from images")
+
+    # Step 2: Concat all clips using the concat demuxer
+    concat_file = tmpdir / "concat.txt"
+    with open(concat_file, "w") as f:
+        for cp in clip_paths:
+            f.write(f"file '{cp.as_posix()}'\n")
 
     cmd = [
         ffmpeg_path, "-y",
-        *inputs,
-        "-filter_complex", filter_complex,
-        "-map", "[outv]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-pix_fmt", "yuv420p", "-r", "30",
-        "-t", str(secs_per_image * len(img_paths)),
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_file),
+        "-c", "copy",
         str(output_path),
     ]
+    result = subprocess.run(cmd, capture_output=True, timeout=60)
 
-    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    # Cleanup temp clips
+    for cp in clip_paths:
+        cp.unlink(missing_ok=True)
+    concat_file.unlink(missing_ok=True)
+
     if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg Ken Burns failed: {result.stderr.decode()[:500]}")
+        raise RuntimeError(f"FFmpeg concat failed: {result.stderr.decode()[:500]}")
 
 
 async def generate_image_pollinations(
