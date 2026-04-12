@@ -128,6 +128,7 @@ async def generate_edit_plan(
     analyses: list[AnalysisResult],
     style_preset: StylePreset,
     target_duration: Optional[float] = None,
+    custom_prompt: str = "",
     progress_callback=None,
 ) -> EditPlan:
     """Use Grok with function calling to generate a structured edit plan."""
@@ -195,7 +196,8 @@ AVAILABLE SFX: mining, explosion, mob_hit, mob_death, player_damage, item_pickup
 chest_open, portal, achievement, transition_whoosh, bass_drop, funny_fail, oof, bruh,
 ding, pop, woosh
 
-Call the create_edit_plan function with your editing decisions."""
+Call the create_edit_plan function with your editing decisions.
+{f'{chr(10)}USER INSTRUCTIONS: {custom_prompt}' if custom_prompt else ''}"""
 
     try:
         result = await chat_completion(

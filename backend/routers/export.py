@@ -19,6 +19,7 @@ router = APIRouter(tags=["export"])
 class AutoEditRequest(BaseModel):
     style: str = "high_energy"
     quality: str = "1080p"
+    prompt: str = ""
 
 
 @router.post("/projects/{project_id}/auto-edit")
@@ -38,6 +39,7 @@ async def start_auto_edit(project_id: str, req: AutoEditRequest):
         task_fn=run_auto_edit,
         style_preset=req.style,
         quality=req.quality,
+        prompt=req.prompt,
     )
     return {"job_id": job.id, "status": "queued", "message": "AI auto-edit started"}
 

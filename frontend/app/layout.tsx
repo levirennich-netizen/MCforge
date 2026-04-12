@@ -5,6 +5,7 @@ import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { ToastContainer } from "@/components/ui/Toast";
 import { BackendWarmup } from "@/components/layout/BackendWarmup";
+import { CreeperButton } from "@/components/layout/CreeperButton";
 import mcBg from "../public/mc-bg.jpg";
 
 const geistSans = localFont({
@@ -56,38 +57,7 @@ export default function RootLayout({
         <Header />
         <main className="flex-1 relative">{children}</main>
         <ToastContainer />
-        {/* Corner icon */}
-        <div
-          style={{
-            position: "fixed",
-            bottom: "20px",
-            left: "20px",
-            zIndex: 9999,
-            width: "52px",
-            height: "52px",
-            borderRadius: "12px",
-            backgroundColor: "#4aba3b",
-            border: "2px solid #5cd64d",
-            boxShadow: "0 0 16px rgba(74,186,59,0.4), 0 4px 12px rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-          title="MCForge"
-        >
-          <svg width="32" height="32" viewBox="0 0 8 8">
-            {/* Green background */}
-            <rect x="0" y="0" width="8" height="8" fill="#4aba3b" />
-            {/* Eyes - dark squares */}
-            <rect x="1" y="1" width="2" height="2" fill="#1a1a1a" />
-            <rect x="5" y="1" width="2" height="2" fill="#1a1a1a" />
-            {/* Mouth - T-shape frown */}
-            <rect x="3" y="3" width="2" height="1" fill="#1a1a1a" />
-            <rect x="2" y="4" width="4" height="1" fill="#1a1a1a" />
-            <rect x="2" y="5" width="1" height="2" fill="#1a1a1a" />
-            <rect x="5" y="5" width="1" height="2" fill="#1a1a1a" />
-          </svg>
-        </div>
+        <CreeperButton />
       </body>
     </html>
   );

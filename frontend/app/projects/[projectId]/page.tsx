@@ -38,6 +38,7 @@ export default function ProjectPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [exports, setExports] = useState<ExportRecord[]>([]);
+  const [videoPrompt, setVideoPrompt] = useState("");
 
   useJobProgress(projectId);
 
@@ -59,8 +60,9 @@ export default function ProjectPage() {
         });
         addClip(clip);
         toast.success(`Uploaded ${file.name}`);
-      } catch {
-        toast.error(`Upload failed: ${file.name}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Upload failed";
+        toast.error(`${file.name}: ${msg}`);
       }
     }
     setUploading(false);
@@ -71,8 +73,8 @@ export default function ProjectPage() {
     try {
       await startAnalysis(projectId);
       toast.info("Analysis started");
-    } catch {
-      toast.error("Failed to start analysis");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start analysis");
     }
   };
 
@@ -80,17 +82,18 @@ export default function ProjectPage() {
     try {
       await generatePlan(projectId, project?.style_preset || "high_energy");
       toast.info("Generating edit plan...");
-    } catch {
-      toast.error("Failed to start plan generation");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to start plan generation";
+      toast.error(msg);
     }
   };
 
   const handleAutoEdit = async () => {
     try {
-      await startAutoEdit(projectId, project?.style_preset || "high_energy", "1080p");
+      await startAutoEdit(projectId, project?.style_preset || "high_energy", "1080p", videoPrompt);
       toast.info("AI is making your video...");
-    } catch {
-      toast.error("Failed to start auto-edit");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start auto-edit");
     }
   };
 
@@ -199,18 +202,25 @@ export default function ProjectPage() {
 
         {/* Actions Panel */}
         <div className="space-y-4">
-          {/* Big AI Make Video button */}
+          {/* Big Generate Video button + prompt */}
           <Card padding="md" className="!border-emerald-500/30 !bg-emerald-500/5">
+            <textarea
+              value={videoPrompt}
+              onChange={(e) => setVideoPrompt(e.target.value)}
+              placeholder="Describe your video... e.g. &quot;Epic Minecraft montage with fast cuts and dramatic moments&quot;"
+              rows={3}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-emerald-500/50 resize-none mb-3"
+            />
             <Button
               onClick={handleAutoEdit}
               disabled={clips.length === 0 || hasRunningJobs}
               size="lg"
-              className="w-full !text-lg !py-4 !from-emerald-500 !to-green-600 hover:!from-emerald-400 hover:!to-green-500 !shadow-[0_2px_8px_rgba(0,0,0,0.3),0_0_20px_rgba(16,185,129,0.25)]"
+              className="w-full !text-xl !py-5 !from-emerald-500 !to-green-600 hover:!from-emerald-400 hover:!to-green-500 !shadow-[0_4px_16px_rgba(0,0,0,0.4),0_0_30px_rgba(16,185,129,0.3)]"
             >
-              {hasRunningJobs ? "Working..." : "AI Make Video"}
+              {hasRunningJobs ? "Working..." : "Generate Video"}
             </Button>
             <p className="text-xs text-muted text-center mt-2">
-              One click — AI analyzes, edits, and exports your video
+              AI analyzes, edits, and exports your video
             </p>
           </Card>
 

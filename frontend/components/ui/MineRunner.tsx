@@ -1,542 +1,919 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
-const CANVAS_HEIGHT = 200;
-const GROUND_Y = 165;
-const GRAVITY = 0.7;
-const JUMP_FORCE = -11.5;
-const GAME_SPEED_INIT = 5;
-const GAME_SPEED_INC = 0.002;
-const OBSTACLE_GAP_MIN = 60;
-const OBSTACLE_GAP_MAX = 160;
+// ── Constants ──
+const B = 16;
+const CH = 320;
+const WW = 128;
+const WH = 48;
+const PW = 12;
+const PH = 26;
+const REACH = 4.5;
+const GRAVITY = 0.45;
+const SPEED = 2.5;
+const JUMP = -7.5;
 
-const PLAYER_SIZE = 26;
-const PLAYER_X = 80;
+// ── Block types ──
+const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, WOOD = 4, LEAVES = 5,
+  COAL = 6, DIAMOND = 7, BEDROCK = 8, SAND = 9, PLANK = 10;
+const CHERRY_WOOD = 18, CHERRY_LEAVES = 19, SNOW = 20, ICE = 21,
+  CACTUS = 22, SANDSTONE = 23, SPRUCE_LEAVES = 24;
 
-interface Obstacle {
-  x: number;
-  width: number;
-  height: number;
-  type: "spike" | "pillar" | "double_spike";
+const BLOCK_SET = new Set([GRASS, DIRT, STONE, WOOD, LEAVES, COAL, DIAMOND, BEDROCK, SAND, PLANK,
+  CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES]);
+const isBlock = (id: number) => BLOCK_SET.has(id);
+
+// ── Tool item IDs (11-17) ──
+const WOOD_PICK = 11, STONE_PICK = 12, DIAMOND_PICK = 13,
+  WOOD_SWORD = 14, STONE_SWORD = 15, DIAMOND_SWORD = 16, TORCH = 17;
+
+const ITEM_NAMES: Record<number, string> = {
+  [GRASS]: "Grass", [DIRT]: "Dirt", [STONE]: "Stone", [WOOD]: "Oak Log",
+  [LEAVES]: "Leaves", [COAL]: "Coal Ore", [DIAMOND]: "Diamond Ore",
+  [SAND]: "Sand", [PLANK]: "Oak Planks", [BEDROCK]: "Bedrock",
+  [CHERRY_WOOD]: "Cherry Log", [CHERRY_LEAVES]: "Cherry Blossoms",
+  [SNOW]: "Snow", [ICE]: "Ice", [CACTUS]: "Cactus",
+  [SANDSTONE]: "Sandstone", [SPRUCE_LEAVES]: "Spruce Leaves",
+  [WOOD_PICK]: "Wood Pickaxe", [STONE_PICK]: "Stone Pickaxe", [DIAMOND_PICK]: "Diamond Pickaxe",
+  [WOOD_SWORD]: "Wood Sword", [STONE_SWORD]: "Stone Sword", [DIAMOND_SWORD]: "Diamond Sword",
+  [TORCH]: "Torch",
+};
+
+// Mining speed (frames to break): lower = faster
+const BASE_MINE_TIME = 12;
+const PICK_SPEED: Record<number, number> = { [WOOD_PICK]: 8, [STONE_PICK]: 5, [DIAMOND_PICK]: 3 };
+
+// ── Crafting recipes ──
+interface Recipe { result: number; count: number; ingredients: [number, number][] }
+const RECIPES: Record<string, Recipe> = {
+  "planks": { result: PLANK, count: 4, ingredients: [[WOOD, 1]] },
+  "wooden pickaxe": { result: WOOD_PICK, count: 1, ingredients: [[PLANK, 3], [WOOD, 2]] },
+  "wood pickaxe": { result: WOOD_PICK, count: 1, ingredients: [[PLANK, 3], [WOOD, 2]] },
+  "stone pickaxe": { result: STONE_PICK, count: 1, ingredients: [[STONE, 3], [WOOD, 2]] },
+  "diamond pickaxe": { result: DIAMOND_PICK, count: 1, ingredients: [[DIAMOND, 3], [WOOD, 2]] },
+  "wooden sword": { result: WOOD_SWORD, count: 1, ingredients: [[PLANK, 2], [WOOD, 1]] },
+  "wood sword": { result: WOOD_SWORD, count: 1, ingredients: [[PLANK, 2], [WOOD, 1]] },
+  "stone sword": { result: STONE_SWORD, count: 1, ingredients: [[STONE, 2], [WOOD, 1]] },
+  "diamond sword": { result: DIAMOND_SWORD, count: 1, ingredients: [[DIAMOND, 2], [WOOD, 1]] },
+  "torch": { result: TORCH, count: 4, ingredients: [[COAL, 1], [WOOD, 1]] },
+};
+
+// ── Deterministic hash ──
+const hash = (x: number, y: number, s: number) => {
+  const n = Math.sin(x * 374.761 + y * 668.265 + s * 1234.567) * 43758.5453;
+  return n - Math.floor(n);
+};
+
+// ── Biomes ──
+const BIOME_PLAINS = 0, BIOME_CHERRY = 1, BIOME_DESERT = 2, BIOME_SNOWY = 3;
+
+function getBiome(x: number, seed: number): number {
+  const v = Math.sin(x * 0.022 + seed * 0.7) + Math.sin(x * 0.009 + seed * 2.3) * 0.8;
+  if (v > 0.5) return BIOME_CHERRY;
+  if (v < -0.7) return BIOME_DESERT;
+  if (v > -0.7 && v < -0.2 && Math.sin(x * 0.04 + seed * 1.1) > 0.2) return BIOME_SNOWY;
+  return BIOME_PLAINS;
 }
 
-interface Particle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  color: string;
+// ── Texture atlas ──
+function buildAtlas(): HTMLCanvasElement {
+  const atlas = document.createElement("canvas");
+  atlas.width = B * 25;
+  atlas.height = B;
+  const ac = atlas.getContext("2d")!;
+  const hexRgb = (h: string): [number, number, number] => {
+    const v = parseInt(h.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  };
+  const pick = (pal: string[], x: number, y: number, seed: number) => hexRgb(pal[Math.floor(hash(x, y, seed) * pal.length)]);
+  const vary = (rgb: [number, number, number], x: number, y: number, amt: number): [number, number, number] => {
+    const v = (hash(x * 13, y * 7, 999) - 0.5) * amt;
+    return [Math.max(0, Math.min(255, rgb[0] + v)), Math.max(0, Math.min(255, rgb[1] + v)), Math.max(0, Math.min(255, rgb[2] + v))];
+  };
+
+  function gen(type: number) {
+    const img = ac.createImageData(B, B);
+    const d = img.data;
+    const set = (x: number, y: number, r: number, g: number, b: number) => {
+      const i = (y * B + x) * 4; d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    };
+    const gTop = ["#5B9E2E", "#6EB33B", "#79BC43", "#4E8F24", "#67A835"];
+    const dPal = ["#866527", "#7A5C24", "#9B7D3E", "#6F5020", "#8A6930"];
+    const sPal = ["#7F7F7F", "#8A8A8A", "#727272", "#969696", "#6B6B6B"];
+    const wPal = ["#6B4A2A", "#5C3D1E", "#7A5530", "#4D3318", "#755030"];
+    const lPal = ["#2D8C2D", "#3A9E3A", "#1F7A1F", "#4BAD4B", "#267A26"];
+    const snPal = ["#D9C479", "#CFBA6E", "#E3CE84", "#C5AF62", "#DCCB7F"];
+    const pPal = ["#B48C4E", "#A07A3C", "#C49856", "#9A7035", "#BC944C"];
+    const bkPal = ["#2A2A2A", "#3D3D3D", "#1A1A1A", "#4A4A4A", "#333333"];
+
+    for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) {
+      let rgb: [number, number, number];
+      switch (type) {
+        case GRASS:
+          if (y < 3) rgb = vary(pick(gTop, x, y, 10), x, y, 15);
+          else if (y === 3) rgb = hash(x, y, 20) < 0.5 ? pick(gTop, x, y, 11) : pick(dPal, x, y, 12);
+          else rgb = vary(pick(dPal, x, y, 13), x, y, 12); break;
+        case DIRT: rgb = vary(pick(dPal, x, y, 30), x, y, 14); break;
+        case STONE: {
+          const px2 = Math.floor(x / 3), py2 = Math.floor(y / 3);
+          const pb = (hash(px2, py2, 40) - 0.5) * 30;
+          rgb = vary(pick(sPal, px2, py2, 41), x, y, 10);
+          rgb = [Math.max(0, Math.min(255, rgb[0] + pb)), Math.max(0, Math.min(255, rgb[1] + pb)), Math.max(0, Math.min(255, rgb[2] + pb))]; break;
+        }
+        case WOOD: {
+          const base = pick(wPal, Math.floor(x / 2), 0, 50);
+          const grain = Math.sin(y * 1.2 + hash(x, 0, 51) * 3) * 10;
+          rgb = vary([base[0] + grain, base[1] + grain, base[2] + grain] as [number, number, number], x, y, 8);
+          if (x % 4 === 0) rgb = [rgb[0] - 15, rgb[1] - 15, rgb[2] - 10] as [number, number, number];
+          rgb = [Math.max(0, Math.min(255, rgb[0])), Math.max(0, Math.min(255, rgb[1])), Math.max(0, Math.min(255, rgb[2]))]; break;
+        }
+        case LEAVES: {
+          rgb = vary(pick(lPal, x, y, 60), x, y, 18);
+          if (hash(x, y, 61) < 0.12) rgb = [Math.max(0, rgb[0] - 30), Math.max(0, rgb[1] - 25), Math.max(0, rgb[2] - 30)]; break;
+        }
+        case COAL: {
+          rgb = vary(pick(sPal, x, y, 70), x, y, 10);
+          if (Math.abs(x - 4) + Math.abs(y - 4) < 2.5 || Math.abs(x - 11) + Math.abs(y - 9) < 2 || Math.abs(x - 6) + Math.abs(y - 12) < 2)
+            rgb = vary([35, 30, 30], x, y, 8); break;
+        }
+        case DIAMOND: {
+          rgb = vary(pick(sPal, x, y, 80), x, y, 10);
+          if (Math.abs(x - 3) + Math.abs(y - 5) < 2.2 || Math.abs(x - 10) + Math.abs(y - 4) < 2 || Math.abs(x - 7) + Math.abs(y - 11) < 2.2) {
+            rgb = hash(x, y, 81) < 0.5 ? [100, 230, 235] : [55, 190, 200];
+          } break;
+        }
+        case BEDROCK: rgb = vary(pick(bkPal, x, y, 90), x, y, 20); break;
+        case SAND: rgb = vary(pick(snPal, x, y, 100), x, y, 8); break;
+        case PLANK: {
+          rgb = vary(pick(pPal, x, Math.floor(y / 4), 110), x, y, 10);
+          if (y % 4 === 0) rgb = [rgb[0] - 18, rgb[1] - 16, rgb[2] - 12] as [number, number, number];
+          rgb = [Math.max(0, rgb[0]), Math.max(0, rgb[1]), Math.max(0, rgb[2])]; break;
+        }
+        // ── New biome blocks ──
+        case CHERRY_WOOD: {
+          const cwPal = ["#8B5A5A", "#7A4A4A", "#9C6060", "#6D3E3E", "#8E5555"];
+          const base = pick(cwPal, Math.floor(x / 2), 0, 180);
+          const grain = Math.sin(y * 1.2 + hash(x, 0, 181) * 3) * 8;
+          rgb = vary([base[0] + grain, base[1] + grain, base[2] + grain] as [number, number, number], x, y, 8);
+          if (x % 4 === 0) rgb = [rgb[0] - 12, rgb[1] - 12, rgb[2] - 8] as [number, number, number];
+          rgb = [Math.max(0, Math.min(255, rgb[0])), Math.max(0, Math.min(255, rgb[1])), Math.max(0, Math.min(255, rgb[2]))]; break;
+        }
+        case CHERRY_LEAVES: {
+          const clPal = ["#F2A0B5", "#E88CA0", "#F7B5C8", "#DC7890", "#F0A8BB"];
+          rgb = vary(pick(clPal, x, y, 190), x, y, 18);
+          if (hash(x, y, 191) < 0.15) rgb = [Math.min(255, rgb[0] + 25), Math.max(0, rgb[1] - 15), Math.max(0, rgb[2] - 10)];
+          break;
+        }
+        case SNOW: {
+          const snowPal = ["#F0F4F8", "#E8ECF0", "#F5F8FC", "#E0E6EC", "#EDF1F5"];
+          rgb = vary(pick(snowPal, x, y, 200), x, y, 6);
+          break;
+        }
+        case ICE: {
+          const icePal = ["#A0D8EF", "#8ECFE8", "#B0E0F5", "#80C5E0", "#95D0EA"];
+          rgb = vary(pick(icePal, x, y, 210), x, y, 12);
+          if (hash(x, y, 211) < 0.08) rgb = [Math.min(255, rgb[0] + 30), Math.min(255, rgb[1] + 25), Math.min(255, rgb[2] + 20)];
+          break;
+        }
+        case CACTUS: {
+          const cacPal = ["#2D6B2D", "#357535", "#256125", "#408040", "#2A6A2A"];
+          rgb = vary(pick(cacPal, x, y, 220), x, y, 12);
+          if ((x === 0 || x === B - 1) && y % 3 === 0) rgb = [Math.min(255, rgb[0] + 30), Math.min(255, rgb[1] + 25), Math.min(255, rgb[2] + 15)];
+          if (hash(x, y, 221) < 0.06) rgb = [Math.min(255, rgb[0] + 35), Math.min(255, rgb[1] + 30), rgb[2]];
+          break;
+        }
+        case SANDSTONE: {
+          const ssPal = ["#D4B878", "#C8AC6C", "#DFCA88", "#BCA060", "#D0B474"];
+          const band = Math.floor(y / 4);
+          rgb = vary(pick(ssPal, x, band, 230), x, y, 8);
+          if (y % 4 === 0) rgb = [Math.max(0, rgb[0] - 12), Math.max(0, rgb[1] - 10), Math.max(0, rgb[2] - 8)];
+          break;
+        }
+        case SPRUCE_LEAVES: {
+          const slPal = ["#1A4A1A", "#225522", "#143E14", "#2A602A", "#1C4C1C"];
+          rgb = vary(pick(slPal, x, y, 240), x, y, 14);
+          if (hash(x, y, 241) < 0.1) rgb = [Math.max(0, rgb[0] - 20), Math.max(0, rgb[1] - 15), Math.max(0, rgb[2] - 20)];
+          break;
+        }
+        default: rgb = [255, 0, 255];
+      }
+      set(x, y, rgb[0], rgb[1], rgb[2]);
+    }
+    ac.putImageData(img, type * B, 0);
+  }
+  for (let t = 1; t <= 10; t++) gen(t);
+  [CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES].forEach(gen);
+  return atlas;
 }
+
+// ── World gen ──
+const terrainH = (x: number, s: number) =>
+  Math.floor(WH * 0.35 + Math.sin(x * 0.08 + s) * 4 + Math.sin(x * 0.17 + s * 1.7) * 2 + Math.sin(x * 0.03 + s * 3.1) * 5);
+
+function genWorld(seed: number) {
+  const w: number[][] = Array.from({ length: WH }, () => new Array(WW).fill(AIR));
+  for (let x = 0; x < WW; x++) {
+    const sy = terrainH(x, seed);
+    const biome = getBiome(x, seed);
+
+    for (let y = sy; y < WH; y++) {
+      if (y >= WH - 1) { w[y][x] = BEDROCK; continue; }
+
+      if (biome === BIOME_DESERT) {
+        if (y < sy + 5) w[y][x] = SAND;
+        else if (y < sy + 8) w[y][x] = SANDSTONE;
+        else {
+          w[y][x] = STONE;
+          const h = hash(x, y, seed);
+          if (y > sy + 14 && h < 0.012) w[y][x] = DIAMOND;
+          else if (y > sy + 5 && h < 0.045) w[y][x] = COAL;
+        }
+      } else if (biome === BIOME_SNOWY) {
+        if (y === sy) w[y][x] = hash(x, 0, seed + 55) < 0.15 ? ICE : SNOW;
+        else if (y < sy + 4) w[y][x] = DIRT;
+        else {
+          w[y][x] = STONE;
+          const h = hash(x, y, seed);
+          if (y > sy + 14 && h < 0.012) w[y][x] = DIAMOND;
+          else if (y > sy + 5 && h < 0.045) w[y][x] = COAL;
+        }
+      } else {
+        // Plains and Cherry share same ground
+        if (y === sy) w[y][x] = GRASS;
+        else if (y < sy + 4) w[y][x] = DIRT;
+        else {
+          w[y][x] = STONE;
+          const h = hash(x, y, seed);
+          if (y > sy + 14 && h < 0.012) w[y][x] = DIAMOND;
+          else if (y > sy + 5 && h < 0.045) w[y][x] = COAL;
+        }
+      }
+    }
+
+    // Trees per biome
+    const treeChance = hash(x, 0, seed + 99);
+    if (x > 3 && x < WW - 3) {
+      if (biome === BIOME_PLAINS && treeChance < 0.1) {
+        // Oak tree
+        const th = 4 + Math.floor(hash(x, 1, seed) * 2);
+        for (let t = 1; t <= th; t++) if (sy - t >= 0) w[sy - t][x] = WOOD;
+        for (let ly = -2; ly <= 0; ly++) for (let lx = -2; lx <= 2; lx++) {
+          const ty = sy - th + ly, tx = x + lx;
+          if (ty >= 0 && tx >= 0 && tx < WW && w[ty][tx] === AIR && (Math.abs(lx) + Math.abs(ly) < 3 || hash(tx, ty, seed + 77) < 0.5))
+            w[ty][tx] = LEAVES;
+        }
+      } else if (biome === BIOME_CHERRY && treeChance < 0.12) {
+        // Cherry blossom tree - taller, wider round canopy
+        const th = 5 + Math.floor(hash(x, 1, seed) * 2);
+        for (let t = 1; t <= th; t++) if (sy - t >= 0) w[sy - t][x] = CHERRY_WOOD;
+        for (let ly = -3; ly <= 1; ly++) for (let lx = -3; lx <= 3; lx++) {
+          const ty = sy - th + ly, tx = x + lx;
+          if (ty >= 0 && tx >= 0 && tx < WW && w[ty][tx] === AIR) {
+            const dist = Math.abs(lx) + Math.abs(ly);
+            if (dist < 4 || (dist === 4 && hash(tx, ty, seed + 77) < 0.3))
+              w[ty][tx] = CHERRY_LEAVES;
+          }
+        }
+      } else if (biome === BIOME_DESERT && treeChance < 0.05) {
+        // Cactus
+        const ch = 2 + Math.floor(hash(x, 1, seed) * 3);
+        for (let t = 0; t < ch; t++) if (sy - 1 - t >= 0) w[sy - 1 - t][x] = CACTUS;
+      } else if (biome === BIOME_SNOWY && treeChance < 0.1) {
+        // Spruce tree - tall, narrow pointed canopy
+        const th = 5 + Math.floor(hash(x, 1, seed) * 3);
+        for (let t = 1; t <= th; t++) if (sy - t >= 0) w[sy - t][x] = WOOD;
+        if (sy - th - 1 >= 0) w[sy - th - 1][x] = SPRUCE_LEAVES;
+        for (let dy = 0; dy < th - 1; dy++) {
+          const y = sy - th + dy;
+          if (y < 0) continue;
+          const maxW = Math.min(2, Math.floor(dy / 2));
+          for (let lx = -maxW; lx <= maxW; lx++) {
+            const tx = x + lx;
+            if (tx >= 0 && tx < WW && w[y][tx] === AIR)
+              w[y][tx] = SPRUCE_LEAVES;
+          }
+        }
+      }
+    }
+  }
+
+  // Caves (only carve underground stone-like blocks)
+  const carveable = new Set([STONE, COAL, DIAMOND, DIRT, SANDSTONE]);
+  for (let y = 0; y < WH; y++) for (let x = 0; x < WW; x++)
+    if (carveable.has(w[y][x])) {
+      const c = Math.sin(x * 0.15 + seed) * Math.cos(y * 0.2 + seed * 0.5) + Math.sin(x * 0.08 - y * 0.1 + seed * 2);
+      if (c > 0.82) w[y][x] = AIR;
+    }
+  return w;
+}
+
+interface Cloud { x: number; y: number; w: number; h: number; speed: number }
+function genClouds(seed: number): Cloud[] {
+  const clouds: Cloud[] = [];
+  for (let i = 0; i < 8; i++) clouds.push({
+    x: hash(i, 0, seed + 300) * WW * B, y: 8 + hash(i, 1, seed + 300) * 35,
+    w: 50 + hash(i, 2, seed + 300) * 70, h: 12 + hash(i, 4, seed + 300) * 10,
+    speed: 0.12 + hash(i, 3, seed + 300) * 0.25,
+  });
+  return clouds;
+}
+
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string }
+interface ChatMsg { text: string; color: string; time: number }
+
+const BLOCK_COLOR: Record<number, string> = {
+  [GRASS]: "#5da33a", [DIRT]: "#866527", [STONE]: "#808080", [WOOD]: "#6B4A2A",
+  [LEAVES]: "#2D8C2D", [COAL]: "#555", [DIAMOND]: "#4DD5E5", [SAND]: "#D9C479", [PLANK]: "#B48C4E",
+  [CHERRY_WOOD]: "#8B5A5A", [CHERRY_LEAVES]: "#F2A0B5", [SNOW]: "#F0F4F8",
+  [ICE]: "#A0D8EF", [CACTUS]: "#2D6B2D", [SANDSTONE]: "#D4B878", [SPRUCE_LEAVES]: "#1A4A1A",
+};
+
+// Tool colors for icon drawing
+const TOOL_COLORS: Record<number, { head: string; stick: string }> = {
+  [WOOD_PICK]: { head: "#B48C4E", stick: "#6B4A2A" },
+  [STONE_PICK]: { head: "#808080", stick: "#6B4A2A" },
+  [DIAMOND_PICK]: { head: "#4DD5E5", stick: "#6B4A2A" },
+  [WOOD_SWORD]: { head: "#B48C4E", stick: "#6B4A2A" },
+  [STONE_SWORD]: { head: "#808080", stick: "#6B4A2A" },
+  [DIAMOND_SWORD]: { head: "#4DD5E5", stick: "#6B4A2A" },
+  [TORCH]: { head: "#FFD700", stick: "#6B4A2A" },
+};
 
 export function MineRunner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameRef = useRef({
-    playerY: GROUND_Y - PLAYER_SIZE,
-    velocityY: 0,
-    isJumping: false,
-    rotation: 0,
-    targetRotation: 0,
-    obstacles: [] as Obstacle[],
-    particles: [] as Particle[],
-    score: 0,
-    gameSpeed: GAME_SPEED_INIT,
-    frameCount: 0,
-    nextObstacleIn: 80,
-    gameOver: false,
-    started: false,
-    groundOffset: 0,
-    bgShapes: [] as { x: number; y: number; size: number; speed: number; rot: number }[],
-    pulse: 0,
-  });
-  const animRef = useRef<number>(0);
-  const [highScore, setHighScore] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const chatRef = useRef<ChatMsg[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const stateRef = useRef<any>(null);
+  const [inputVal, setInputVal] = useState("");
 
-  const jump = useCallback(() => {
-    const g = gameRef.current;
-    if (g.gameOver) {
-      g.playerY = GROUND_Y - PLAYER_SIZE;
-      g.velocityY = 0;
-      g.isJumping = false;
-      g.rotation = 0;
-      g.targetRotation = 0;
-      g.obstacles = [];
-      g.particles = [];
-      g.score = 0;
-      g.gameSpeed = GAME_SPEED_INIT;
-      g.frameCount = 0;
-      g.nextObstacleIn = 80;
-      g.gameOver = false;
-      g.started = true;
-      return;
-    }
-    if (!g.started) {
-      g.started = true;
-    }
-    if (!g.isJumping) {
-      g.velocityY = JUMP_FORCE;
-      g.isJumping = true;
-      g.targetRotation += Math.PI / 2; // 90° rotation per jump like GD
-    }
+  const addChat = useCallback((text: string, color = "#fff") => {
+    chatRef.current.push({ text, color, time: Date.now() });
+    if (chatRef.current.length > 50) chatRef.current.shift();
   }, []);
+
+  const handleCommand = useCallback((input: string) => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    if (trimmed.startsWith("/")) {
+      const cmd = trimmed.slice(1).toLowerCase().trim();
+
+      if (cmd === "help") {
+        addChat("Commands:", "#ffd700");
+        addChat("  /craft <item> - Craft an item", "#aaa");
+        addChat("  /recipes - Show all recipes", "#aaa");
+        addChat("  /inventory - Show your items", "#aaa");
+        return;
+      }
+
+      if (cmd === "recipes") {
+        addChat("── Recipes ──", "#ffd700");
+        const seen = new Set<number>();
+        for (const [name, r] of Object.entries(RECIPES)) {
+          if (seen.has(r.result)) continue;
+          seen.add(r.result);
+          const ingr = r.ingredients.map(([id, n]) => `${n}x ${ITEM_NAMES[id]}`).join(" + ");
+          addChat(`  /${name} → ${r.count}x ${ITEM_NAMES[r.result]}`, "#8f8");
+          addChat(`    Needs: ${ingr}`, "#aaa");
+        }
+        return;
+      }
+
+      if (cmd === "inventory" || cmd === "inv") {
+        const s = stateRef.current;
+        if (!s) return;
+        addChat("── Inventory ──", "#ffd700");
+        let hasItems = false;
+        s.inventory.forEach((count: number, id: number) => {
+          if (count > 0) { addChat(`  ${ITEM_NAMES[id] || "???"}: ${count}`, "#ccc"); hasItems = true; }
+        });
+        if (!hasItems) addChat("  (empty)", "#888");
+        return;
+      }
+
+      // Try crafting - support both "/craft diamond pickaxe" and "/diamond pickaxe"
+      let craftName = cmd;
+      if (craftName.startsWith("craft ")) craftName = craftName.slice(6).trim();
+
+      const recipe = RECIPES[craftName];
+      if (!recipe) {
+        addChat(`Unknown: "${craftName}". Type /recipes`, "#f66");
+        return;
+      }
+
+      const s = stateRef.current;
+      if (!s) return;
+
+      // Check ingredients
+      const missing: string[] = [];
+      for (const [itemId, needed] of recipe.ingredients) {
+        const have = s.inventory.get(itemId) || 0;
+        if (have < needed) missing.push(`${needed - have} more ${ITEM_NAMES[itemId]}`);
+      }
+
+      if (missing.length > 0) {
+        addChat(`Need: ${missing.join(", ")}`, "#f66");
+        return;
+      }
+
+      // Consume ingredients
+      for (const [itemId, needed] of recipe.ingredients) {
+        s.inventory.set(itemId, (s.inventory.get(itemId) || 0) - needed);
+        if ((s.inventory.get(itemId) || 0) <= 0) s.inventory.delete(itemId);
+      }
+
+      // Give result
+      s.inventory.set(recipe.result, (s.inventory.get(recipe.result) || 0) + recipe.count);
+
+      // Add to hotbar if not there
+      if (!s.hotbar.includes(recipe.result)) {
+        const empty = s.hotbar.indexOf(0);
+        if (empty >= 0) s.hotbar[empty] = recipe.result;
+      }
+
+      addChat(`Crafted ${recipe.count}x ${ITEM_NAMES[recipe.result]}!`, "#5f5");
+    } else {
+      addChat(`<You> ${trimmed}`, "#ddd");
+    }
+  }, [addChat]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d")!;
     if (!ctx) return;
 
-    const g = gameRef.current;
+    const atlas = buildAtlas();
+    const seed = Math.random() * 10000;
+    const world = genWorld(seed);
 
-    // Init background geometric shapes
-    if (g.bgShapes.length === 0) {
-      for (let i = 0; i < 12; i++) {
-        g.bgShapes.push({
-          x: Math.random() * 900,
-          y: 20 + Math.random() * (GROUND_Y - 60),
-          size: 10 + Math.random() * 30,
-          speed: 0.3 + Math.random() * 0.8,
-          rot: Math.random() * Math.PI * 2,
-        });
-      }
-    }
+    const spawnX = Math.floor(WW / 2);
+    let spawnY = 0;
+    for (let y = 0; y < WH; y++) { if (world[y][spawnX] !== AIR) { spawnY = y - 2; break; } }
 
-    // ── Colors ──
-    const NEON = "#10b981";
-    const NEON_BRIGHT = "#34d399";
-    const NEON_DIM = "#065f46";
-    const SPIKE_COLOR = "#ef4444";
-    const SPIKE_BRIGHT = "#f87171";
-    const PILLAR_COLOR = "#3b82f6";
-    const PILLAR_BRIGHT = "#60a5fa";
+    const s = {
+      world, px: spawnX * B + 2, py: spawnY * B,
+      vx: 0, vy: 0, onGround: false, camX: 0, camY: 0,
+      keys: new Set<string>(), mouseX: -1, mouseY: -1,
+      inventory: new Map<number, number>([[DIRT, 10], [WOOD, 5]]),
+      hotbar: [DIRT, STONE, WOOD, PLANK, LEAVES, SAND, 0, 0, 0] as number[],
+      selected: 0, facing: 1, walkFrame: 0,
+      clouds: genClouds(seed), particles: [] as Particle[],
+      miningBlock: null as { bx: number; by: number; t: number } | null,
+      mouseDown: false,
+    };
+    stateRef.current = s;
 
-    // ── Background ──
-    function drawBackground() {
-      if (!ctx || !canvas) return;
-      // Dark gradient
-      const grad = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-      grad.addColorStop(0, "#050510");
-      grad.addColorStop(0.6, "#0a0a20");
-      grad.addColorStop(1, "#0d0d1a");
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, canvas.width, CANVAS_HEIGHT);
+    addChat("Welcome to MineRunner!", "#5f5");
+    addChat("Explore biomes: Plains, Cherry Blossom, Desert, Snowy", "#aaa");
+    addChat("Type /help for commands, /recipes to craft", "#aaa");
 
-      // Scrolling background shapes (diamonds/squares)
-      g.pulse += 0.02;
-      const pulseAlpha = 0.03 + Math.sin(g.pulse) * 0.015;
+    const solid = (gx: number, gy: number) => {
+      if (gx < 0 || gx >= WW || gy >= WH) return true;
+      return gy >= 0 && world[gy][gx] !== AIR;
+    };
+    const getHovered = () => {
+      if (s.mouseX < 0) return null;
+      const bx = Math.floor((s.mouseX + s.camX) / B), by = Math.floor((s.mouseY + s.camY) / B);
+      const dist = Math.hypot((bx + 0.5) * B - (s.px + PW / 2), (by + 0.5) * B - (s.py + PH / 2));
+      if (dist <= REACH * B && bx >= 0 && bx < WW && by >= 0 && by < WH) return { bx, by };
+      return null;
+    };
 
-      for (const shape of g.bgShapes) {
-        if (g.started && !g.gameOver) {
-          shape.x -= g.gameSpeed * shape.speed;
-          shape.rot += 0.005;
-          if (shape.x + shape.size < -10) {
-            shape.x = canvas.width + 20 + Math.random() * 100;
-            shape.y = 20 + Math.random() * (GROUND_Y - 60);
-          }
-        }
-        ctx.save();
-        ctx.translate(shape.x + shape.size / 2, shape.y + shape.size / 2);
-        ctx.rotate(shape.rot);
-        ctx.strokeStyle = `rgba(16, 185, 129, ${pulseAlpha})`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(-shape.size / 2, -shape.size / 2, shape.size, shape.size);
-        ctx.restore();
-      }
-
-      // ── Ground ──
-      const blockW = 30;
-      const offset = Math.floor(g.groundOffset) % blockW;
-
-      // Ground glow line
-      ctx.shadowColor = NEON;
-      ctx.shadowBlur = 12;
-      ctx.strokeStyle = NEON;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, GROUND_Y);
-      ctx.lineTo(canvas.width, GROUND_Y);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Ground fill
-      ctx.fillStyle = "#0a0f1a";
-      ctx.fillRect(0, GROUND_Y, canvas.width, CANVAS_HEIGHT - GROUND_Y);
-
-      // Ground grid lines
-      ctx.strokeStyle = "rgba(16, 185, 129, 0.08)";
-      ctx.lineWidth = 1;
-      // Vertical
-      for (let x = -offset; x < canvas.width + blockW; x += blockW) {
-        ctx.beginPath();
-        ctx.moveTo(x, GROUND_Y);
-        ctx.lineTo(x, CANVAS_HEIGHT);
-        ctx.stroke();
-      }
-      // Horizontal
-      for (let y = GROUND_Y + blockW; y < CANVAS_HEIGHT; y += blockW) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
-    }
-
-    // ── Particles ──
-    function spawnTrailParticle() {
-      if (!g.started || g.gameOver) return;
-      g.particles.push({
-        x: PLAYER_X + PLAYER_SIZE / 2,
-        y: g.playerY + PLAYER_SIZE,
-        vx: -1 - Math.random() * 2,
-        vy: -0.5 + Math.random(),
-        life: 1.0,
-        color: NEON,
-      });
-    }
-
-    function spawnDeathParticles() {
-      for (let i = 0; i < 20; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 2 + Math.random() * 4;
-        g.particles.push({
-          x: PLAYER_X + PLAYER_SIZE / 2,
-          y: g.playerY + PLAYER_SIZE / 2,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          life: 1.0,
-          color: i % 2 === 0 ? NEON_BRIGHT : "#ffffff",
-        });
-      }
-    }
-
-    function updateParticles() {
-      for (const p of g.particles) {
-        p.x += p.vx;
-        p.y += p.vy;
-        p.life -= 0.03;
-      }
-      g.particles = g.particles.filter((p) => p.life > 0);
-    }
-
-    function drawParticles() {
-      if (!ctx) return;
-      for (const p of g.particles) {
-        ctx.globalAlpha = p.life;
-        ctx.fillStyle = p.color;
-        const size = 3 * p.life;
-        ctx.fillRect(p.x - size / 2, p.y - size / 2, size, size);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    // ── Player (GD-style cube with creeper face) ──
-    function drawPlayer() {
-      if (!ctx) return;
-      const cx = PLAYER_X + PLAYER_SIZE / 2;
-      const cy = g.playerY + PLAYER_SIZE / 2;
-
-      // Smooth rotation towards target
-      const rotDiff = g.targetRotation - g.rotation;
-      g.rotation += rotDiff * 0.15;
-
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(g.rotation);
-
-      const half = PLAYER_SIZE / 2;
-
-      // Outer glow
-      ctx.shadowColor = NEON;
-      ctx.shadowBlur = g.gameOver ? 0 : 14;
-
-      // Cube body
-      ctx.fillStyle = NEON;
-      ctx.fillRect(-half, -half, PLAYER_SIZE, PLAYER_SIZE);
-
-      // Inner darker square
-      ctx.fillStyle = NEON_DIM;
-      ctx.fillRect(-half + 3, -half + 3, PLAYER_SIZE - 6, PLAYER_SIZE - 6);
-
-      // Bright inner
-      ctx.fillStyle = NEON;
-      ctx.fillRect(-half + 5, -half + 5, PLAYER_SIZE - 10, PLAYER_SIZE - 10);
-
-      ctx.shadowBlur = 0;
-
-      // Creeper face on the cube (big and bold)
-      ctx.fillStyle = "#000000";
-      const s = PLAYER_SIZE;
-      // Eyes (2 big squares)
-      ctx.fillRect(-half + s * 0.12, -half + s * 0.15, s * 0.28, s * 0.25);
-      ctx.fillRect(-half + s * 0.60, -half + s * 0.15, s * 0.28, s * 0.25);
-      // Mouth center column
-      ctx.fillRect(-half + s * 0.35, -half + s * 0.42, s * 0.30, s * 0.15);
-      // Mouth wide bar
-      ctx.fillRect(-half + s * 0.20, -half + s * 0.55, s * 0.60, s * 0.15);
-      // Mouth bottom legs
-      ctx.fillRect(-half + s * 0.20, -half + s * 0.68, s * 0.20, s * 0.18);
-      ctx.fillRect(-half + s * 0.60, -half + s * 0.68, s * 0.20, s * 0.18);
-
-      ctx.restore();
-    }
-
-    // ── Obstacles ──
-    function drawObstacle(obs: Obstacle) {
-      if (!ctx) return;
-      const bx = Math.floor(obs.x);
-      const by = GROUND_Y - obs.height;
-
-      if (obs.type === "spike" || obs.type === "double_spike") {
-        // GD-style spike triangles
-        ctx.shadowColor = SPIKE_COLOR;
-        ctx.shadowBlur = 8;
-
-        const drawSpike = (sx: number) => {
-          if (!ctx) return;
-          ctx.fillStyle = SPIKE_COLOR;
-          ctx.beginPath();
-          ctx.moveTo(sx, GROUND_Y);
-          ctx.lineTo(sx + obs.width / 2, by);
-          ctx.lineTo(sx + obs.width, GROUND_Y);
-          ctx.closePath();
-          ctx.fill();
-
-          // Inner triangle (brighter)
-          ctx.fillStyle = SPIKE_BRIGHT;
-          const inset = 4;
-          ctx.beginPath();
-          ctx.moveTo(sx + inset, GROUND_Y - 2);
-          ctx.lineTo(sx + obs.width / 2, by + obs.height * 0.3);
-          ctx.lineTo(sx + obs.width - inset, GROUND_Y - 2);
-          ctx.closePath();
-          ctx.fill();
-        };
-
-        drawSpike(bx);
-        if (obs.type === "double_spike") {
-          drawSpike(bx + obs.width - 4);
-        }
-
-        ctx.shadowBlur = 0;
-
-      } else {
-        // Pillar block
-        ctx.shadowColor = PILLAR_COLOR;
-        ctx.shadowBlur = 8;
-
-        ctx.fillStyle = PILLAR_COLOR;
-        ctx.fillRect(bx, by, obs.width, obs.height);
-
-        // Inner
-        ctx.fillStyle = PILLAR_BRIGHT;
-        ctx.fillRect(bx + 3, by + 3, obs.width - 6, obs.height - 6);
-
-        ctx.fillStyle = PILLAR_COLOR;
-        ctx.fillRect(bx + 6, by + 6, obs.width - 12, obs.height - 12);
-
-        ctx.shadowBlur = 0;
-      }
-    }
-
-    // ── Score ──
-    function drawScore() {
-      if (!ctx || !canvas) return;
-      ctx.fillStyle = NEON_BRIGHT;
-      ctx.font = "bold 14px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText(`${Math.floor(g.score).toString().padStart(5, "0")}`, canvas.width - 12, 24);
-      if (highScore > 0) {
-        ctx.fillStyle = "#4b5563";
-        ctx.font = "11px monospace";
-        ctx.fillText(`HI ${highScore.toString().padStart(5, "0")}`, canvas.width - 12, 40);
-      }
-
-      // Progress bar at top
-      const progress = Math.min(g.score / 100, 1);
-      ctx.fillStyle = "rgba(16, 185, 129, 0.1)";
-      ctx.fillRect(12, 14, canvas.width - 100, 4);
-      ctx.fillStyle = NEON;
-      ctx.fillRect(12, 14, (canvas.width - 100) * progress, 4);
-      // Percentage
-      ctx.fillStyle = "#6b7280";
-      ctx.font = "10px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText(`${Math.floor(progress * 100)}%`, 12, 30);
-    }
-
-    // ── UI text ──
-    function drawUI() {
-      if (!ctx || !canvas) return;
-      if (!g.started) {
-        // Pulsing text
-        const alpha = 0.6 + Math.sin(Date.now() / 400) * 0.4;
-        ctx.fillStyle = `rgba(52, 211, 153, ${alpha})`;
-        ctx.font = "bold 15px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("PRESS SPACE OR TAP", canvas.width / 2, GROUND_Y / 2 - 5);
-        ctx.fillStyle = "#4b5563";
-        ctx.font = "11px monospace";
-        ctx.fillText("play while the server wakes up", canvas.width / 2, GROUND_Y / 2 + 15);
-      }
-      if (g.gameOver) {
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
-        ctx.fillRect(0, 0, canvas.width, CANVAS_HEIGHT);
-
-        ctx.fillStyle = SPIKE_COLOR;
-        ctx.font = "bold 18px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText("GAME OVER", canvas.width / 2, GROUND_Y / 2 - 8);
-        ctx.fillStyle = "#6b7280";
-        ctx.font = "12px monospace";
-        ctx.fillText("tap or press space to retry", canvas.width / 2, GROUND_Y / 2 + 16);
-      }
-    }
+    // Get mining time based on held tool
+    const getMineTime = () => {
+      const held = s.hotbar[s.selected];
+      return PICK_SPEED[held] || BASE_MINE_TIME;
+    };
 
     // ── Update ──
-    function update() {
-      if (!g.started || g.gameOver) return;
+    const update = () => {
+      let mx = 0;
+      if (s.keys.has("a") || s.keys.has("arrowleft")) { mx = -SPEED; s.facing = -1; }
+      if (s.keys.has("d") || s.keys.has("arrowright")) { mx = SPEED; s.facing = 1; }
+      s.vx = mx;
+      if (mx !== 0) s.walkFrame++;
+      if ((s.keys.has(" ") || s.keys.has("w") || s.keys.has("arrowup")) && s.onGround) s.vy = JUMP;
+      s.vy += GRAVITY; if (s.vy > 12) s.vy = 12;
 
-      g.velocityY += GRAVITY;
-      g.playerY += g.velocityY;
-      if (g.playerY >= GROUND_Y - PLAYER_SIZE) {
-        g.playerY = GROUND_Y - PLAYER_SIZE;
-        g.velocityY = 0;
-        g.isJumping = false;
-        // Snap rotation
-        g.rotation = g.targetRotation;
-      }
+      s.px += s.vx;
+      let l = Math.floor(s.px / B), r = Math.floor((s.px + PW - 1) / B);
+      let t = Math.floor(s.py / B), b = Math.floor((s.py + PH - 1) / B);
+      xloop: for (let gy = t; gy <= b; gy++) for (let gx = l; gx <= r; gx++)
+        if (solid(gx, gy)) { s.px = s.vx > 0 ? gx * B - PW : (gx + 1) * B; s.vx = 0; break xloop; }
 
-      g.groundOffset += g.gameSpeed;
-
-      // Trail particles every 3 frames
-      if (g.frameCount % 3 === 0) {
-        spawnTrailParticle();
-      }
-
-      // Spawn obstacles
-      g.nextObstacleIn--;
-      if (g.nextObstacleIn <= 0) {
-        const roll = Math.random();
-        let type: Obstacle["type"];
-        let h: number, w: number;
-        if (roll < 0.4) {
-          type = "spike";
-          w = 24;
-          h = 28 + Math.random() * 10;
-        } else if (roll < 0.7) {
-          type = "double_spike";
-          w = 22;
-          h = 26 + Math.random() * 10;
-        } else {
-          type = "pillar";
-          w = 28;
-          h = 30 + Math.random() * 20;
+      s.py += s.vy;
+      l = Math.floor(s.px / B); r = Math.floor((s.px + PW - 1) / B);
+      t = Math.floor(s.py / B); b = Math.floor((s.py + PH - 1) / B);
+      s.onGround = false;
+      yloop: for (let gy = t; gy <= b; gy++) for (let gx = l; gx <= r; gx++)
+        if (solid(gx, gy)) {
+          if (s.vy > 0) { s.py = gy * B - PH; s.onGround = true; } else s.py = (gy + 1) * B;
+          s.vy = 0; break yloop;
         }
-        g.obstacles.push({ x: canvas!.width + 10, width: w, height: h, type });
-        g.nextObstacleIn = OBSTACLE_GAP_MIN + Math.random() * OBSTACLE_GAP_MAX;
+
+      if (s.px < 0) s.px = 0;
+      if (s.px > (WW - 1) * B) s.px = (WW - 1) * B;
+      if (s.py > (WH - 1) * B) { s.py = (WH - 1) * B; s.vy = 0; s.onGround = true; }
+
+      s.camX += ((s.px + PW / 2 - canvas.width / 2) - s.camX) * 0.12;
+      s.camY += ((s.py + PH / 2 - canvas.height / 2) - s.camY) * 0.12;
+      s.camX = Math.max(0, Math.min(WW * B - canvas.width, s.camX));
+      s.camY = Math.max(0, Math.min(WH * B - canvas.height, s.camY));
+
+      for (const c of s.clouds) { c.x += c.speed; if (c.x > WW * B + 100) c.x = -c.w - 50; }
+
+      // Mining
+      const mineTime = getMineTime();
+      if (s.mouseDown) {
+        const hov = getHovered();
+        if (hov && world[hov.by][hov.bx] !== AIR && world[hov.by][hov.bx] !== BEDROCK) {
+          if (s.miningBlock && s.miningBlock.bx === hov.bx && s.miningBlock.by === hov.by) {
+            s.miningBlock.t += 1;
+            if (s.miningBlock.t >= mineTime) {
+              const type = world[hov.by][hov.bx];
+              world[hov.by][hov.bx] = AIR;
+              s.inventory.set(type, (s.inventory.get(type) || 0) + 1);
+              if (!s.hotbar.includes(type)) { const e = s.hotbar.indexOf(0); if (e >= 0) s.hotbar[e] = type; }
+              const col = BLOCK_COLOR[type] || "#888";
+              for (let i = 0; i < 8; i++) {
+                const a = Math.random() * Math.PI * 2, sp = 1 + Math.random() * 2.5;
+                s.particles.push({ x: hov.bx * B + B / 2, y: hov.by * B + B / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, life: 1, color: col });
+              }
+              s.miningBlock = null;
+            }
+          } else s.miningBlock = { bx: hov.bx, by: hov.by, t: 0 };
+        } else s.miningBlock = null;
+      } else s.miningBlock = null;
+
+      for (const p of s.particles) { p.x += p.vx; p.y += p.vy; p.vy += 0.12; p.life -= 0.035; }
+      s.particles = s.particles.filter(p => p.life > 0);
+    };
+
+    // ── Draw tool icon ──
+    const drawToolIcon = (ctx: CanvasRenderingContext2D, itemId: number, x: number, y: number, size: number) => {
+      const tc = TOOL_COLORS[itemId];
+      if (!tc) return;
+      const s2 = size;
+      const isSword = itemId >= WOOD_SWORD && itemId <= DIAMOND_SWORD;
+      const isTorch = itemId === TORCH;
+
+      if (isTorch) {
+        ctx.fillStyle = tc.stick;
+        ctx.fillRect(x + s2 * 0.4, y + s2 * 0.3, s2 * 0.2, s2 * 0.6);
+        ctx.fillStyle = "#ff6600";
+        ctx.fillRect(x + s2 * 0.3, y + s2 * 0.1, s2 * 0.4, s2 * 0.25);
+        ctx.fillStyle = tc.head;
+        ctx.fillRect(x + s2 * 0.35, y + s2 * 0.05, s2 * 0.3, s2 * 0.15);
+      } else if (isSword) {
+        ctx.fillStyle = tc.stick;
+        ctx.fillRect(x + s2 * 0.4, y + s2 * 0.6, s2 * 0.2, s2 * 0.35);
+        ctx.fillStyle = "#888";
+        ctx.fillRect(x + s2 * 0.25, y + s2 * 0.55, s2 * 0.5, s2 * 0.1);
+        ctx.fillStyle = tc.head;
+        ctx.fillRect(x + s2 * 0.35, y + s2 * 0.05, s2 * 0.3, s2 * 0.5);
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.fillRect(x + s2 * 0.35, y + s2 * 0.05, s2 * 0.1, s2 * 0.45);
+      } else {
+        ctx.fillStyle = tc.stick;
+        ctx.fillRect(x + s2 * 0.4, y + s2 * 0.4, s2 * 0.2, s2 * 0.55);
+        ctx.fillStyle = tc.head;
+        ctx.fillRect(x + s2 * 0.1, y + s2 * 0.1, s2 * 0.8, s2 * 0.25);
+        ctx.fillRect(x + s2 * 0.1, y + s2 * 0.1, s2 * 0.15, s2 * 0.35);
+        ctx.fillRect(x + s2 * 0.75, y + s2 * 0.1, s2 * 0.15, s2 * 0.35);
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.fillRect(x + s2 * 0.1, y + s2 * 0.1, s2 * 0.8, s2 * 0.08);
+      }
+    };
+
+    // ── Render ──
+    const render = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+
+      // Determine biome at camera center for sky tinting
+      const camCenterX = Math.floor((s.camX + canvas.width / 2) / B);
+      const currentBiome = getBiome(Math.max(0, Math.min(WW - 1, camCenterX)), seed);
+
+      // Sky with biome tint
+      const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      if (currentBiome === BIOME_CHERRY) {
+        sky.addColorStop(0, "#c490d9"); sky.addColorStop(0.35, "#d4a8e8");
+        sky.addColorStop(0.7, "#e8c4f0"); sky.addColorStop(1, "#f0d8f7");
+      } else if (currentBiome === BIOME_DESERT) {
+        sky.addColorStop(0, "#7ab0d0"); sky.addColorStop(0.35, "#a0c8d8");
+        sky.addColorStop(0.7, "#d0dcc0"); sky.addColorStop(1, "#e8ddb0");
+      } else if (currentBiome === BIOME_SNOWY) {
+        sky.addColorStop(0, "#8098b0"); sky.addColorStop(0.35, "#99aec4");
+        sky.addColorStop(0.7, "#b4c6d8"); sky.addColorStop(1, "#c8d8e4");
+      } else {
+        sky.addColorStop(0, "#4a90d9"); sky.addColorStop(0.35, "#72b4e8");
+        sky.addColorStop(0.7, "#9ed0f5"); sky.addColorStop(1, "#b8dff7");
+      }
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Sun
+      const sunX = canvas.width * 0.8 - s.camX * 0.01;
+      ctx.fillStyle = "#fff7b0"; ctx.beginPath(); ctx.arc(sunX, 40, 20, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,247,176,0.12)"; ctx.beginPath(); ctx.arc(sunX, 40, 35, 0, Math.PI * 2); ctx.fill();
+
+      // Mountains
+      ctx.fillStyle = currentBiome === BIOME_SNOWY ? "rgba(200,210,230,0.3)" : "rgba(100,140,180,0.25)";
+      for (let mx = -50; mx < canvas.width + 100; mx += 3) {
+        const mh = 30 + Math.sin((mx + s.camX * 0.05) * 0.012) * 25 + Math.sin((mx + s.camX * 0.05) * 0.025) * 15;
+        ctx.fillRect(mx, canvas.height * 0.3 - mh / 2, 3, mh);
       }
 
-      for (const obs of g.obstacles) {
-        obs.x -= g.gameSpeed;
+      // Clouds
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      for (const c of s.clouds) {
+        const cx = Math.floor(c.x - s.camX * 0.3);
+        if (cx > -c.w - 20 && cx < canvas.width + 20) {
+          ctx.fillRect(cx, c.y, c.w, c.h);
+          ctx.fillRect(cx + c.w * 0.1, c.y - c.h * 0.6, c.w * 0.3, c.h * 0.7);
+          ctx.fillRect(cx + c.w * 0.45, c.y - c.h * 0.8, c.w * 0.25, c.h * 0.9);
+          ctx.fillStyle = "rgba(200,215,230,0.6)"; ctx.fillRect(cx, c.y + c.h * 0.6, c.w, c.h * 0.4);
+          ctx.fillStyle = "rgba(255,255,255,0.85)";
+        }
       }
-      g.obstacles = g.obstacles.filter((o) => o.x + o.width > -20);
 
-      // Collision
-      for (const obs of g.obstacles) {
-        const px = PLAYER_X + 4;
-        const py = g.playerY + 4;
-        const pw = PLAYER_SIZE - 8;
-        const ph = PLAYER_SIZE - 8;
+      // Blocks
+      const bsx = Math.max(0, Math.floor(s.camX / B)), bex = Math.min(WW, Math.ceil((s.camX + canvas.width) / B) + 1);
+      const bsy = Math.max(0, Math.floor(s.camY / B)), bey = Math.min(WH, Math.ceil((s.camY + canvas.height) / B) + 1);
+      for (let gy = bsy; gy < bey; gy++) for (let gx = bsx; gx < bex; gx++) {
+        const type = world[gy][gx]; if (type === AIR) continue;
+        const bx = Math.floor(gx * B - s.camX), by = Math.floor(gy * B - s.camY);
+        ctx.drawImage(atlas, type * B, 0, B, B, bx, by, B, B);
+        const above = gy > 0 && world[gy - 1][gx] !== AIR, left = gx > 0 && world[gy][gx - 1] !== AIR;
+        const below = gy < WH - 1 && world[gy + 1][gx] !== AIR, right = gx < WW - 1 && world[gy][gx + 1] !== AIR;
+        if (above) { ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(bx, by, B, 2); }
+        if (left) { ctx.fillStyle = "rgba(0,0,0,0.04)"; ctx.fillRect(bx, by, 2, B); }
+        if (!above && type !== LEAVES && type !== CHERRY_LEAVES && type !== SPRUCE_LEAVES) { ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(bx, by, B, 1); }
+        if (!below) { ctx.fillStyle = "rgba(0,0,0,0.08)"; ctx.fillRect(bx, by + B - 1, B, 1); }
+        if (!right) { ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(bx + B - 1, by, 1, B); }
+      }
 
-        if (obs.type === "spike" || obs.type === "double_spike") {
-          // Triangle collision — check if player overlaps spike area
-          const spikeTop = GROUND_Y - obs.height;
-          const spikeCx = obs.x + obs.width / 2;
-          if (
-            px + pw > obs.x + 4 &&
-            px < obs.x + obs.width - 4 &&
-            py + ph > spikeTop + obs.height * 0.3
-          ) {
-            // More precise: check if bottom of player is within the triangle width at that height
-            const playerBottom = py + ph;
-            const heightInSpike = GROUND_Y - playerBottom;
-            const widthAtHeight = (heightInSpike / obs.height) * obs.width;
-            const leftEdge = spikeCx - widthAtHeight / 2;
-            const rightEdge = spikeCx + widthAtHeight / 2;
-            if (px + pw > leftEdge + 2 && px < rightEdge - 2) {
-              g.gameOver = true;
-              spawnDeathParticles();
-              setHighScore((prev) => Math.max(prev, Math.floor(g.score)));
-              return;
+      // Biome-specific decorations
+      for (let gx = bsx; gx < bex; gx++) {
+        const biome = getBiome(gx, seed);
+        for (let gy = bsy; gy < bey; gy++) {
+          const blockType = world[gy][gx];
+          const hasAirAbove = gy === 0 || world[gy - 1][gx] === AIR;
+          if (!hasAirAbove) continue;
+
+          const bx = Math.floor(gx * B - s.camX), by = Math.floor(gy * B - s.camY);
+          const r = hash(gx, gy, seed + 200);
+
+          if (blockType === GRASS && (biome === BIOME_PLAINS || biome === BIOME_CHERRY)) {
+            if (biome === BIOME_PLAINS) {
+              // Tall grass and flowers
+              if (r < 0.3) {
+                ctx.fillStyle = r < 0.1 ? "#6dba46" : "#5aaa35";
+                ctx.fillRect(bx + 5, by - 6, 1, 6); ctx.fillRect(bx + 7, by - 8, 1, 8); ctx.fillRect(bx + 9, by - 5, 1, 5);
+              } else if (r < 0.38) {
+                ctx.fillStyle = "#5aaa35"; ctx.fillRect(bx + 7, by - 6, 1, 6);
+                ctx.fillStyle = r < 0.34 ? "#e84040" : "#e8d040"; ctx.fillRect(bx + 6, by - 8, 3, 2);
+              }
+            } else {
+              // Cherry biome: pink petals on ground + pink flowers
+              if (r < 0.35) {
+                ctx.fillStyle = "#5aaa35"; ctx.fillRect(bx + 6, by - 5, 1, 5);
+                ctx.fillStyle = "#F2A0B5"; ctx.fillRect(bx + 5, by - 7, 3, 2);
+              } else if (r < 0.5) {
+                // Fallen petals
+                ctx.fillStyle = "rgba(242,160,181,0.6)";
+                ctx.fillRect(bx + 3, by - 1, 2, 1);
+                ctx.fillRect(bx + 9, by - 2, 2, 1);
+                ctx.fillRect(bx + 13, by - 1, 2, 1);
+              }
+            }
+          } else if (blockType === SNOW && biome === BIOME_SNOWY) {
+            // Snowflakes / snow particles above
+            if (r < 0.15) {
+              ctx.fillStyle = "rgba(255,255,255,0.6)";
+              ctx.fillRect(bx + 4, by - 3, 1, 1);
+              ctx.fillRect(bx + 10, by - 5, 1, 1);
+            }
+          } else if (blockType === SAND && biome === BIOME_DESERT) {
+            // Dead bushes
+            if (r < 0.06) {
+              ctx.fillStyle = "#8B7355";
+              ctx.fillRect(bx + 7, by - 5, 1, 5);
+              ctx.fillRect(bx + 5, by - 7, 1, 3);
+              ctx.fillRect(bx + 9, by - 6, 1, 3);
             }
           }
-        } else {
-          // Box collision for pillars
-          const oy = GROUND_Y - obs.height;
-          if (px + pw > obs.x + 3 && px < obs.x + obs.width - 3 && py + ph > oy + 3) {
-            g.gameOver = true;
-            spawnDeathParticles();
-            setHighScore((prev) => Math.max(prev, Math.floor(g.score)));
-            return;
-          }
         }
       }
 
-      g.score += 0.15;
-      g.gameSpeed += GAME_SPEED_INC;
-      g.frameCount++;
+      // Particles
+      for (const p of s.particles) {
+        ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color;
+        const sz = 2 + p.life * 2; ctx.fillRect(p.x - s.camX - sz / 2, p.y - s.camY - sz / 2, sz, sz);
+      }
+      ctx.globalAlpha = 1;
 
-      updateParticles();
-    }
+      // Player
+      const px = Math.floor(s.px - s.camX), py = Math.floor(s.py - s.camY);
+      const f = s.facing, walking = s.onGround && Math.abs(s.vx) > 0.1;
+      const legAnim = walking ? Math.sin(s.walkFrame * 0.3) * 4 : 0, armAnim = walking ? Math.sin(s.walkFrame * 0.3) * 3 : 0;
+      ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fillRect(px - 2, py + PH, PW + 4, 2);
+      ctx.fillStyle = "#26327a"; ctx.fillRect(px, py + 18 + (legAnim > 0 ? 1 : 0), 5, 7); ctx.fillRect(px + 6, py + 18 + (legAnim < 0 ? 1 : 0), 5, 7);
+      ctx.fillStyle = "#1e2966"; ctx.fillRect(px + 4, py + 18, 1, 7); ctx.fillRect(px + 6, py + 18, 1, 7);
+      ctx.fillStyle = "#4a4a4a"; ctx.fillRect(px - 1 + (legAnim > 0 ? 1 : 0), py + 24, 6, 2); ctx.fillRect(px + 6 + (legAnim < 0 ? -1 : 0), py + 24, 6, 2);
+      ctx.fillStyle = "#3bbaa8"; ctx.fillRect(px, py + 10, PW, 8);
+      ctx.fillStyle = "#2f9e8e"; ctx.fillRect(px, py + 16, PW, 2);
+      ctx.fillStyle = "#333"; ctx.fillRect(px, py + 17, PW, 1);
+      ctx.fillStyle = "#c49555"; ctx.fillRect(px - 3, py + 10 + armAnim, 3, 9); ctx.fillRect(px + PW, py + 10 - armAnim, 3, 9);
+      ctx.fillStyle = "#a87e45"; ctx.fillRect(px - 3, py + 17 + armAnim, 3, 2); ctx.fillRect(px + PW, py + 17 - armAnim, 3, 2);
+      ctx.fillStyle = "#c49555"; ctx.fillRect(px - 1, py - 1, PW + 2, 11);
+      ctx.fillStyle = "#4a2c0a"; ctx.fillRect(px - 1, py - 2, PW + 2, 4);
+      if (f > 0) ctx.fillRect(px + PW - 1, py - 2, 2, 8); else ctx.fillRect(px - 1, py - 2, 2, 8);
+      ctx.fillStyle = "#5c3810"; ctx.fillRect(px + 2, py - 2, PW - 3, 1);
+      ctx.fillStyle = "#fff"; const eyeX = f > 0 ? px + 2 : px + 1;
+      ctx.fillRect(eyeX, py + 4, 3, 3); ctx.fillRect(eyeX + 5, py + 4, 3, 3);
+      ctx.fillStyle = "#2b1a0a"; ctx.fillRect(eyeX + (f > 0 ? 1 : 0), py + 5, 2, 2); ctx.fillRect(eyeX + 5 + (f > 0 ? 1 : 0), py + 5, 2, 2);
+      ctx.fillStyle = "#b5814a"; ctx.fillRect(eyeX + 3, py + 6, 1, 2);
+      ctx.fillStyle = "#8b5e3c"; ctx.fillRect(eyeX + 2, py + 8, 3, 1);
 
-    // ── Game loop ──
-    function gameLoop() {
-      if (!ctx || !canvas) return;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawBackground();
-      drawParticles();
-      for (const obs of g.obstacles) drawObstacle(obs);
-      drawPlayer();
-      drawScore();
-      drawUI();
-      update();
-      animRef.current = requestAnimationFrame(gameLoop);
-    }
+      // Block highlight
+      const hov = getHovered();
+      if (hov) {
+        const hx = Math.floor(hov.bx * B - s.camX), hy = Math.floor(hov.by * B - s.camY);
+        if (s.miningBlock && s.miningBlock.bx === hov.bx && s.miningBlock.by === hov.by) {
+          const prog = s.miningBlock.t / getMineTime();
+          ctx.fillStyle = `rgba(0,0,0,${prog * 0.5})`; ctx.fillRect(hx, hy, B, B);
+          ctx.strokeStyle = `rgba(30,0,0,${0.3 + prog * 0.7})`; ctx.lineWidth = 1;
+          for (let i = 0; i < Math.ceil(prog * 6); i++) {
+            ctx.beginPath();
+            ctx.moveTo(hx + B / 2 + (hash(hov.bx + i, hov.by, 1) - 0.5) * 6, hy + hash(hov.bx, hov.by + i, 2) * B);
+            ctx.lineTo(hx + hash(hov.bx + i, hov.by, 3) * B, hy + hash(hov.bx, hov.by + i, 4) * B);
+            ctx.stroke();
+          }
+        }
+        ctx.strokeStyle = "rgba(0,0,0,0.5)"; ctx.lineWidth = 2; ctx.strokeRect(hx - 0.5, hy - 0.5, B + 1, B + 1);
+        ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 1; ctx.strokeRect(hx + 0.5, hy + 0.5, B - 1, B - 1);
+      }
 
-    const resizeCanvas = () => {
-      if (!canvas) return;
-      canvas.width = canvas.parentElement?.clientWidth || 600;
-      canvas.height = CANVAS_HEIGHT;
+      // ── Chat messages (on canvas, MC-style) ──
+      const now = Date.now();
+      const msgs = chatRef.current.filter(m => now - m.time < 6000);
+      const chatY = canvas.height - 58;
+      for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[msgs.length - 1 - i];
+        const age = (now - m.time) / 1000;
+        const alpha = age > 4.5 ? Math.max(0, 1 - (age - 4.5) / 1.5) : 1;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(4, chatY - i * 14 - 12, ctx.measureText(m.text).width + 8, 14);
+        ctx.globalAlpha = alpha;
+        ctx.font = "bold 10px monospace"; ctx.textAlign = "left";
+        ctx.fillStyle = m.color;
+        ctx.fillText(m.text, 8, chatY - i * 14 - 2);
+      }
+      ctx.globalAlpha = 1;
+
+      // ── Hotbar ──
+      const slotSize = 28, gap = 2;
+      const hotW = 9 * slotSize + 8 * gap, hotX = Math.floor((canvas.width - hotW) / 2), hotY = canvas.height - 36;
+      ctx.fillStyle = "rgba(30,30,30,0.85)"; ctx.fillRect(hotX - 4, hotY - 4, hotW + 8, slotSize + 8);
+      ctx.strokeStyle = "rgba(80,80,80,0.6)"; ctx.strokeRect(hotX - 4, hotY - 4, hotW + 8, slotSize + 8);
+
+      for (let i = 0; i < 9; i++) {
+        const slx = hotX + i * (slotSize + gap);
+        ctx.fillStyle = i === s.selected ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.3)";
+        ctx.fillRect(slx, hotY, slotSize, slotSize);
+        ctx.strokeStyle = i === s.selected ? "rgba(255,255,255,0.7)" : "rgba(90,90,90,0.5)";
+        ctx.lineWidth = i === s.selected ? 2 : 1; ctx.strokeRect(slx, hotY, slotSize, slotSize); ctx.lineWidth = 1;
+
+        const bt = s.hotbar[i];
+        if (bt) {
+          if (isBlock(bt)) {
+            ctx.drawImage(atlas, bt * B, 0, B, B, slx + 6, hotY + 6, 16, 16);
+          } else {
+            drawToolIcon(ctx, bt, slx + 4, hotY + 3, 20);
+          }
+          const count = s.inventory.get(bt) || 0;
+          if (count > 0) {
+            ctx.font = "bold 10px monospace"; ctx.textAlign = "right";
+            ctx.fillStyle = "#000"; ctx.fillText(String(count), slx + 26, hotY + 25);
+            ctx.fillStyle = "#fff"; ctx.fillText(String(count), slx + 25, hotY + 24);
+          }
+        }
+        ctx.fillStyle = "rgba(255,255,255,0.25)"; ctx.font = "8px monospace"; ctx.textAlign = "left";
+        ctx.fillText(String(i + 1), slx + 2, hotY + 9);
+      }
+
+      // Selected name
+      const selBlock = s.hotbar[s.selected];
+      if (selBlock && ITEM_NAMES[selBlock]) {
+        ctx.font = "bold 11px monospace"; ctx.textAlign = "center";
+        ctx.fillStyle = "#000"; ctx.fillText(ITEM_NAMES[selBlock], canvas.width / 2 + 1, hotY - 7);
+        ctx.fillStyle = "#fff"; ctx.fillText(ITEM_NAMES[selBlock], canvas.width / 2, hotY - 8);
+      }
+
+      // Biome indicator
+      const biomeNames = ["Plains", "Cherry Blossom", "Desert", "Snowy Tundra"];
+      const biomeColors = ["#5da33a", "#F2A0B5", "#D9C479", "#A0D8EF"];
+      ctx.font = "bold 9px monospace"; ctx.textAlign = "right";
+      ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillText(biomeNames[currentBiome], canvas.width - 5, 13);
+      ctx.fillStyle = biomeColors[currentBiome]; ctx.fillText(biomeNames[currentBiome], canvas.width - 6, 12);
+
+      // Controls hint
+      ctx.font = "9px monospace"; ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillText("WASD: Move | Click: Mine | Right-click: Place | 1-9/Scroll: Select", 7, 13);
+      ctx.fillStyle = "rgba(255,255,255,0.55)"; ctx.fillText("WASD: Move | Click: Mine | Right-click: Place | 1-9/Scroll: Select", 6, 12);
     };
-    resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
 
-    animRef.current = requestAnimationFrame(gameLoop);
+    let anim: number;
+    const loop = () => { update(); render(); anim = requestAnimationFrame(loop); };
+    const resize = () => { canvas.width = canvas.parentElement?.clientWidth || 600; canvas.height = CH; };
+    resize(); window.addEventListener("resize", resize);
+    anim = requestAnimationFrame(loop);
 
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" || e.code === "ArrowUp") {
-        e.preventDefault();
-        jump();
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const k = e.key.toLowerCase(); s.keys.add(k);
+      if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) e.preventDefault();
+      const num = parseInt(k); if (num >= 1 && num <= 9) s.selected = num - 1;
+      // T to focus chat
+      if (k === "t" || k === "enter") { setTimeout(() => inputRef.current?.focus(), 10); e.preventDefault(); }
+    };
+    const onKeyUp = (e: KeyboardEvent) => s.keys.delete(e.key.toLowerCase());
+    window.addEventListener("keydown", onKeyDown); window.addEventListener("keyup", onKeyUp);
+
+    const coords = (e: MouseEvent) => { const r = canvas.getBoundingClientRect(); s.mouseX = (e.clientX - r.left) * (canvas.width / r.width); s.mouseY = (e.clientY - r.top) * (canvas.height / r.height); };
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault(); coords(e);
+      if (e.button === 0) s.mouseDown = true;
+      else if (e.button === 2) {
+        const hov = getHovered(); if (!hov) return;
+        const bt = s.hotbar[s.selected];
+        if (!isBlock(bt)) return; // can't place tools
+        const count = s.inventory.get(bt) || 0;
+        if (bt && count > 0 && world[hov.by][hov.bx] === AIR) {
+          const pbx1 = Math.floor(s.px / B), pbx2 = Math.floor((s.px + PW - 1) / B);
+          const pby1 = Math.floor(s.py / B), pby2 = Math.floor((s.py + PH - 1) / B);
+          if (hov.bx >= pbx1 && hov.bx <= pbx2 && hov.by >= pby1 && hov.by <= pby2) return;
+          world[hov.by][hov.bx] = bt; s.inventory.set(bt, count - 1);
+          if (count - 1 <= 0) s.inventory.delete(bt);
+        }
       }
     };
-    window.addEventListener("keydown", onKey);
+    const onMouseUp = () => { s.mouseDown = false; s.miningBlock = null; };
+    const onMouseLeave = () => { s.mouseX = -1; s.mouseDown = false; s.miningBlock = null; };
+    const onWheel = (e: WheelEvent) => { e.preventDefault(); s.selected = e.deltaY > 0 ? (s.selected + 1) % 9 : (s.selected + 8) % 9; };
+
+    canvas.addEventListener("mousemove", (e: MouseEvent) => coords(e));
+    canvas.addEventListener("mousedown", onMouseDown);
+    canvas.addEventListener("mouseup", onMouseUp);
+    canvas.addEventListener("mouseleave", onMouseLeave);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
     return () => {
-      cancelAnimationFrame(animRef.current);
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", resizeCanvas);
+      cancelAnimationFrame(anim);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("resize", resize);
     };
-  }, [jump, highScore]);
+  }, [addChat]);
+
+  const onChatKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && inputVal.trim()) {
+      handleCommand(inputVal);
+      setInputVal("");
+      // Return focus to game
+      inputRef.current?.blur();
+    }
+    if (e.key === "Escape") {
+      setInputVal("");
+      inputRef.current?.blur();
+    }
+    // Stop game controls while typing
+    e.stopPropagation();
+  };
 
   return (
-    <div className="rounded-xl border border-emerald-500/20 overflow-hidden bg-[#050510]" style={{ boxShadow: "0 0 20px rgba(16,185,129,0.1)" }}>
-      <canvas
-        ref={canvasRef}
-        height={CANVAS_HEIGHT}
-        onClick={jump}
-        className="w-full cursor-pointer"
-      />
+    <div className="rounded-xl border border-emerald-500/20 overflow-hidden" style={{ boxShadow: "0 0 20px rgba(16,185,129,0.1)" }}>
+      <canvas ref={canvasRef} height={CH} className="w-full cursor-crosshair" onContextMenu={(e) => e.preventDefault()} />
+      <div className="flex items-center bg-black/80 px-2 py-1.5 gap-2">
+        <span className="text-emerald-400 text-xs font-mono">&gt;</span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={inputVal}
+          onChange={(e) => setInputVal(e.target.value)}
+          onKeyDown={onChatKeyDown}
+          placeholder="Type /help or /recipes... (T to focus)"
+          className="flex-1 bg-transparent text-white text-xs font-mono outline-none placeholder:text-white/30"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </div>
     </div>
   );
 }

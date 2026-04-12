@@ -134,6 +134,7 @@ async def run_auto_edit(
     job_id: str,
     style_preset: str = "high_energy",
     quality: str = "1080p",
+    prompt: str = "",
 ) -> None:
     """One-click: analyze all clips → generate AI edit plan → compose & export video."""
     from pipeline.analyze_video import analyze_clip
@@ -175,6 +176,7 @@ async def run_auto_edit(
     analyses = db.get_all_analyses(project_id)
     plan = await generate_edit_plan(
         project_id, analyses, StylePreset(style_preset),
+        custom_prompt=prompt,
         progress_callback=lambda msg: update_progress(
             job_id, project_id, 0.5, msg, "auto_edit"),
     )

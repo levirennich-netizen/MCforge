@@ -9,25 +9,42 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 class APIError extends Error {
   status: number;
-  constructor(res: Response) {
-    super(`API Error ${res.status}: ${res.statusText}`);
-    this.status = res.status;
+  detail: string;
+  constructor(status: number, detail: string) {
+    super(detail || `API Error ${status}`);
+    this.status = status;
+    this.detail = detail;
   }
 }
 
+async function toAPIError(res: Response): Promise<APIError> {
+  let detail = res.statusText;
+  try {
+    const body = await res.json();
+    if (body.detail) detail = body.detail;
+  } catch { /* ignore */ }
+  return new APIError(res.status, detail);
+}
+
 // Retry wrapper for Render cold-start resilience
-async function fetchWithRetry(url: string, opts?: RequestInit, retries = 2): Promise<Response> {
+async function fetchWithRetry(url: string, opts?: RequestInit, retries = 3): Promise<Response> {
   for (let i = 0; i <= retries; i++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), i === 0 ? 15000 : 30000);
+      // Render free tier cold-starts can take 30-60s
+      const timeout = setTimeout(() => controller.abort(), i === 0 ? 60000 : 90000);
       const res = await fetch(url, { ...opts, signal: controller.signal });
       clearTimeout(timeout);
       return res;
     } catch (err) {
-      if (i === retries) throw err;
+      if (i === retries) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error("Server is waking up — please try again in a moment");
+        }
+        throw err;
+      }
       // Wait before retry (backend might be waking up)
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 3000));
     }
   }
   throw new Error("Request failed");
@@ -35,7 +52,7 @@ async function fetchWithRetry(url: string, opts?: RequestInit, retries = 2): Pro
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetchWithRetry(`${API_BASE}${path}`);
-  if (!res.ok) throw new APIError(res);
+  if (!res.ok) throw await toAPIError(res);
   return res.json();
 }
 
@@ -45,7 +62,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: body ? { "Content-Type": "application/json" } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new APIError(res);
+  if (!res.ok) throw await toAPIError(res);
   return res.json();
 }
 
@@ -55,13 +72,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new APIError(res);
+  if (!res.ok) throw await toAPIError(res);
   return res.json();
 }
 
 async function del(path: string): Promise<void> {
   const res = await fetchWithRetry(`${API_BASE}${path}`, { method: "DELETE" });
-  if (!res.ok) throw new APIError(res);
+  if (!res.ok) throw await toAPIError(res);
 }
 
 // Wake up backend on app load (Render free tier sleeps after 15min)
@@ -105,11 +122,15 @@ export async function uploadClip(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText));
       } else {
-        reject(new Error(`Upload failed: ${xhr.status}`));
+        let detail = `Upload failed (${xhr.status})`;
+        try { const body = JSON.parse(xhr.responseText); if (body.detail) detail = body.detail; } catch { /* ignore */ }
+        reject(new Error(detail));
       }
     });
 
-    xhr.addEventListener("error", () => reject(new Error("Upload failed")));
+    xhr.addEventListener("error", () => reject(new Error("Upload failed — server may be waking up, try again")));
+    xhr.addEventListener("timeout", () => reject(new Error("Upload timed out — server may be waking up, try again")));
+    xhr.timeout = 180000; // 3 minutes for large video uploads + cold start
     xhr.open("POST", `${API_BASE}/projects/${projectId}/clips`);
     xhr.send(formData);
   });
@@ -161,8 +182,8 @@ export const getVoices = () => get<Voice[]>("/tts/voices");
 
 // ── Auto-Edit (one-click AI video) ────────────────────────────────────────
 
-export const startAutoEdit = (projectId: string, style: string = "high_energy", quality: string = "1080p") =>
-  post<{ job_id: string }>(`/projects/${projectId}/auto-edit`, { style, quality });
+export const startAutoEdit = (projectId: string, style: string = "high_energy", quality: string = "1080p", prompt: string = "") =>
+  post<{ job_id: string }>(`/projects/${projectId}/auto-edit`, { style, quality, prompt });
 
 // ── Export ─────────────────────────────────────────────────────────────────
 
