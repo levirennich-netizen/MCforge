@@ -293,6 +293,9 @@ export async function streamChatMessage(
 
 // ── Generate ──────────────────────────────────────────────────────────────
 
+export const generateVideo = (projectId: string, prompt: string, model: string = "seedance", duration: number = 5) =>
+  post<{ job_id: string }>(`/projects/${projectId}/generate/video`, { prompt, model, duration });
+
 export const generateImage = (projectId: string, prompt: string, style: ImageStyle = "minecraft") =>
   post<{ job_id: string }>(`/projects/${projectId}/generate/image`, { prompt, style });
 

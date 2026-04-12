@@ -178,6 +178,33 @@ export default function ProjectPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Upload Section */}
         <div className="lg:col-span-2">
+          {/* Video Player — shows latest export */}
+          {exports.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-base font-semibold mb-3 text-foreground/80">
+                Your Video
+              </h3>
+              <div className="rounded-xl overflow-hidden border border-emerald-500/20 bg-black">
+                <video
+                  key={exports[0].id}
+                  controls
+                  className="w-full"
+                  src={getExportDownloadUrl(projectId, exports[0].id)}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-xs text-muted">{exports[0].quality.toUpperCase()}</span>
+                <a
+                  href={getExportDownloadUrl(projectId, exports[0].id)}
+                  download
+                  className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  Download
+                </a>
+              </div>
+            </div>
+          )}
+
           <h3 className="text-base font-semibold mb-4 text-foreground/80">
             Clips <span className="text-muted/50 font-normal">({clips.length})</span>
           </h3>

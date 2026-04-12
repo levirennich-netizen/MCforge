@@ -160,6 +160,21 @@ async def analyze_image(
         return {"raw": content}
 
 
+async def generate_video_pollinations(
+    prompt: str,
+    model: str = "seedance",
+    duration: int = 5,
+) -> bytes:
+    """Generate a video via Pollinations.ai (free, no API key needed). Returns MP4 bytes."""
+    import urllib.parse
+    encoded = urllib.parse.quote(prompt)
+    url = f"https://gen.pollinations.ai/video/{encoded}?model={model}&duration={duration}"
+    async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.content
+
+
 async def generate_image_pollinations(
     prompt: str,
     width: int = 1024,

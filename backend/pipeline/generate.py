@@ -298,3 +298,73 @@ async def run_generate_animated_intro(
 
     update_progress(job_id, project_id, 1.0, "Animated intro generated!", "generate_intro")
     return asset
+
+
+# ── Video generation ──────────────────────────────────────────────────────
+
+VIDEO_STYLE_HINTS = {
+    "minecraft": "Minecraft game footage, blocky voxel world, vibrant colors, ",
+    "cinematic": "Cinematic Minecraft gameplay, dramatic camera angles, ",
+    "timelapse": "Minecraft building timelapse, creative mode, ",
+}
+
+
+async def run_generate_video(
+    project_id: str, job_id: str, prompt: str,
+    model: str = "seedance", duration: int = 5,
+) -> GeneratedAsset:
+    """Generate a video using Pollinations.ai (free)."""
+    from services.grok_client import generate_video_pollinations
+    from services.file_manager import generated_videos_dir
+
+    update_progress(job_id, project_id, 0.1, "Generating video...", "generate_video")
+
+    # Enhance prompt with Minecraft style
+    enhanced = f"{VIDEO_STYLE_HINTS.get('minecraft', '')}{prompt}"
+
+    update_progress(job_id, project_id, 0.2, f"Calling AI video model ({model})...", "generate_video")
+    video_bytes = await generate_video_pollinations(enhanced, model=model, duration=duration)
+
+    if not video_bytes or len(video_bytes) < 1000:
+        raise RuntimeError("Video generation returned empty or invalid response")
+
+    update_progress(job_id, project_id, 0.8, "Saving video...", "generate_video")
+
+    out_dir = generated_videos_dir(project_id)
+    asset_id = new_id("gen_")
+    file_path = out_dir / f"{asset_id}.mp4"
+    file_path.write_bytes(video_bytes)
+
+    file_size = len(video_bytes)
+
+    # Extract thumbnail
+    thumb_path = out_dir / f"{asset_id}_thumb.jpg"
+    try:
+        thumb_cmd = [
+            "ffmpeg", "-y", "-i", str(file_path),
+            "-ss", "1", "-vframes", "1",
+            "-vf", "scale=320:-1",
+            str(thumb_path),
+        ]
+        subprocess.run(thumb_cmd, capture_output=True, timeout=30)
+    except (subprocess.TimeoutExpired, OSError):
+        pass
+
+    update_progress(job_id, project_id, 0.9, "Saving...", "generate_video")
+
+    asset = GeneratedAsset(
+        id=asset_id,
+        project_id=project_id,
+        asset_type=GenerateAssetType.VIDEO,
+        name=f"Video: {prompt[:50]}",
+        prompt=prompt,
+        file_path=str(file_path),
+        thumbnail_path=str(thumb_path) if thumb_path.exists() else "",
+        duration_seconds=float(duration),
+        file_size_bytes=file_size,
+        metadata_json=json.dumps({"model": model, "duration": duration}),
+    )
+    db.create_generated_asset(asset)
+
+    update_progress(job_id, project_id, 1.0, "Video generated!", "generate_video")
+    return asset

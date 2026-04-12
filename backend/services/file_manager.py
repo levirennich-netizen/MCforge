@@ -95,6 +95,12 @@ def generated_intros_dir(project_id: str) -> Path:
     return d
 
 
+def generated_videos_dir(project_id: str) -> Path:
+    d = generated_dir(project_id) / "videos"
+    d.mkdir(exist_ok=True)
+    return d
+
+
 def cleanup_project(project_id: str) -> None:
     """Delete all files for a project."""
     import shutil

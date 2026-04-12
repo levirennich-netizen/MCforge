@@ -19,9 +19,11 @@ const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, WOOD = 4, LEAVES = 5,
   COAL = 6, DIAMOND = 7, BEDROCK = 8, SAND = 9, PLANK = 10;
 const CHERRY_WOOD = 18, CHERRY_LEAVES = 19, SNOW = 20, ICE = 21,
   CACTUS = 22, SANDSTONE = 23, SPRUCE_LEAVES = 24;
+const PALE_WOOD = 25, PALE_LEAVES = 26, PALE_MOSS = 27;
 
 const BLOCK_SET = new Set([GRASS, DIRT, STONE, WOOD, LEAVES, COAL, DIAMOND, BEDROCK, SAND, PLANK,
-  CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES]);
+  CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES,
+  PALE_WOOD, PALE_LEAVES, PALE_MOSS]);
 const isBlock = (id: number) => BLOCK_SET.has(id);
 
 // ── Tool item IDs (11-17) ──
@@ -35,6 +37,7 @@ const ITEM_NAMES: Record<number, string> = {
   [CHERRY_WOOD]: "Cherry Log", [CHERRY_LEAVES]: "Cherry Blossoms",
   [SNOW]: "Snow", [ICE]: "Ice", [CACTUS]: "Cactus",
   [SANDSTONE]: "Sandstone", [SPRUCE_LEAVES]: "Spruce Leaves",
+  [PALE_WOOD]: "Pale Oak Log", [PALE_LEAVES]: "Pale Oak Leaves", [PALE_MOSS]: "Pale Hanging Moss",
   [WOOD_PICK]: "Wood Pickaxe", [STONE_PICK]: "Stone Pickaxe", [DIAMOND_PICK]: "Diamond Pickaxe",
   [WOOD_SWORD]: "Wood Sword", [STONE_SWORD]: "Stone Sword", [DIAMOND_SWORD]: "Diamond Sword",
   [TORCH]: "Torch",
@@ -66,20 +69,22 @@ const hash = (x: number, y: number, s: number) => {
 };
 
 // ── Biomes ──
-const BIOME_PLAINS = 0, BIOME_CHERRY = 1, BIOME_DESERT = 2, BIOME_SNOWY = 3;
+const BIOME_PLAINS = 0, BIOME_CHERRY = 1, BIOME_DESERT = 2, BIOME_SNOWY = 3, BIOME_PALE_GARDEN = 4;
 
 function getBiome(x: number, seed: number): number {
   const v = Math.sin(x * 0.022 + seed * 0.7) + Math.sin(x * 0.009 + seed * 2.3) * 0.8;
+  const w = Math.sin(x * 0.018 + seed * 1.5) + Math.sin(x * 0.035 + seed * 0.4) * 0.5;
   if (v > 0.5) return BIOME_CHERRY;
   if (v < -0.7) return BIOME_DESERT;
   if (v > -0.7 && v < -0.2 && Math.sin(x * 0.04 + seed * 1.1) > 0.2) return BIOME_SNOWY;
+  if (w > 0.8) return BIOME_PALE_GARDEN;
   return BIOME_PLAINS;
 }
 
 // ── Texture atlas ──
 function buildAtlas(): HTMLCanvasElement {
   const atlas = document.createElement("canvas");
-  atlas.width = B * 25;
+  atlas.width = B * 28;
   atlas.height = B;
   const ac = atlas.getContext("2d")!;
   const hexRgb = (h: string): [number, number, number] => {
@@ -196,6 +201,28 @@ function buildAtlas(): HTMLCanvasElement {
           if (hash(x, y, 241) < 0.1) rgb = [Math.max(0, rgb[0] - 20), Math.max(0, rgb[1] - 15), Math.max(0, rgb[2] - 20)];
           break;
         }
+        case PALE_WOOD: {
+          const pwPal = ["#C8BDA8", "#BAB098", "#D0C5B0", "#AEA590", "#C2B8A2"];
+          const base = pick(pwPal, Math.floor(x / 2), 0, 250);
+          const grain = Math.sin(y * 1.1 + hash(x, 0, 251) * 3) * 6;
+          rgb = vary([base[0] + grain, base[1] + grain, base[2] + grain] as [number, number, number], x, y, 6);
+          if (x % 4 === 0) rgb = [rgb[0] - 8, rgb[1] - 8, rgb[2] - 6] as [number, number, number];
+          rgb = [Math.max(0, Math.min(255, rgb[0])), Math.max(0, Math.min(255, rgb[1])), Math.max(0, Math.min(255, rgb[2]))]; break;
+        }
+        case PALE_LEAVES: {
+          const plPal = ["#8A9A7A", "#7D8E6E", "#96A686", "#728264", "#8B9B7C"];
+          rgb = vary(pick(plPal, x, y, 260), x, y, 12);
+          if (hash(x, y, 261) < 0.12) rgb = [Math.min(255, rgb[0] + 15), Math.min(255, rgb[1] + 12), Math.min(255, rgb[2] + 8)];
+          break;
+        }
+        case PALE_MOSS: {
+          const pmPal = ["#C8D0B8", "#BCC5A8", "#D2DAC2", "#B0BAA0", "#C4CCB4"];
+          rgb = vary(pick(pmPal, x, y, 270), x, y, 8);
+          // Stringy hanging look: lighter at top, darker strands
+          if (y > 8) rgb = [Math.max(0, rgb[0] - 12), Math.max(0, rgb[1] - 10), Math.max(0, rgb[2] - 8)];
+          if (x % 3 === 0 && hash(x, y, 271) < 0.3) rgb = [Math.max(0, rgb[0] - 20), Math.max(0, rgb[1] - 18), Math.max(0, rgb[2] - 15)];
+          break;
+        }
         default: rgb = [255, 0, 255];
       }
       set(x, y, rgb[0], rgb[1], rgb[2]);
@@ -203,7 +230,7 @@ function buildAtlas(): HTMLCanvasElement {
     ac.putImageData(img, type * B, 0);
   }
   for (let t = 1; t <= 10; t++) gen(t);
-  [CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES].forEach(gen);
+  [CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES, PALE_WOOD, PALE_LEAVES, PALE_MOSS].forEach(gen);
   return atlas;
 }
 
@@ -231,6 +258,15 @@ function genWorld(seed: number) {
         }
       } else if (biome === BIOME_SNOWY) {
         if (y === sy) w[y][x] = hash(x, 0, seed + 55) < 0.15 ? ICE : SNOW;
+        else if (y < sy + 4) w[y][x] = DIRT;
+        else {
+          w[y][x] = STONE;
+          const h = hash(x, y, seed);
+          if (y > sy + 14 && h < 0.012) w[y][x] = DIAMOND;
+          else if (y > sy + 5 && h < 0.045) w[y][x] = COAL;
+        }
+      } else if (biome === BIOME_PALE_GARDEN) {
+        if (y === sy) w[y][x] = GRASS;
         else if (y < sy + 4) w[y][x] = DIRT;
         else {
           w[y][x] = STONE;
@@ -279,6 +315,33 @@ function genWorld(seed: number) {
         // Cactus
         const ch = 2 + Math.floor(hash(x, 1, seed) * 3);
         for (let t = 0; t < ch; t++) if (sy - 1 - t >= 0) w[sy - 1 - t][x] = CACTUS;
+      } else if (biome === BIOME_PALE_GARDEN && treeChance < 0.14) {
+        // Pale oak tree - tall with hanging moss
+        const th = 5 + Math.floor(hash(x, 1, seed) * 3);
+        for (let t = 1; t <= th; t++) if (sy - t >= 0) w[sy - t][x] = PALE_WOOD;
+        // Wide canopy
+        for (let ly = -3; ly <= 0; ly++) for (let lx = -3; lx <= 3; lx++) {
+          const ty = sy - th + ly, tx = x + lx;
+          if (ty >= 0 && tx >= 0 && tx < WW && w[ty][tx] === AIR) {
+            const dist = Math.abs(lx) + Math.abs(ly);
+            if (dist < 4 || (dist === 4 && hash(tx, ty, seed + 88) < 0.3))
+              w[ty][tx] = PALE_LEAVES;
+          }
+        }
+        // Hanging moss below leaf edges
+        for (let lx = -3; lx <= 3; lx++) {
+          const tx = x + lx;
+          if (tx < 0 || tx >= WW) continue;
+          const leafY = sy - th;
+          if (leafY + 1 < WH && w[leafY][tx] === PALE_LEAVES && hash(tx, leafY, seed + 150) < 0.45) {
+            const mossLen = 1 + Math.floor(hash(tx, leafY, seed + 151) * 3);
+            for (let m = 1; m <= mossLen; m++) {
+              const my = leafY + m;
+              if (my < WH && w[my][tx] === AIR) w[my][tx] = PALE_MOSS;
+              else break;
+            }
+          }
+        }
       } else if (biome === BIOME_SNOWY && treeChance < 0.1) {
         // Spruce tree - tall, narrow pointed canopy
         const th = 5 + Math.floor(hash(x, 1, seed) * 3);
@@ -327,6 +390,7 @@ const BLOCK_COLOR: Record<number, string> = {
   [LEAVES]: "#2D8C2D", [COAL]: "#555", [DIAMOND]: "#4DD5E5", [SAND]: "#D9C479", [PLANK]: "#B48C4E",
   [CHERRY_WOOD]: "#8B5A5A", [CHERRY_LEAVES]: "#F2A0B5", [SNOW]: "#F0F4F8",
   [ICE]: "#A0D8EF", [CACTUS]: "#2D6B2D", [SANDSTONE]: "#D4B878", [SPRUCE_LEAVES]: "#1A4A1A",
+  [PALE_WOOD]: "#C8BDA8", [PALE_LEAVES]: "#8A9A7A", [PALE_MOSS]: "#C8D0B8",
 };
 
 // Tool colors for icon drawing
@@ -467,7 +531,7 @@ export function MineRunner() {
     stateRef.current = s;
 
     addChat("Welcome to MineRunner!", "#5f5");
-    addChat("Explore biomes: Plains, Cherry Blossom, Desert, Snowy", "#aaa");
+    addChat("Explore biomes: Plains, Cherry, Desert, Snowy, Pale Garden", "#aaa");
     addChat("Type /help for commands, /recipes to craft", "#aaa");
 
     const solid = (gx: number, gy: number) => {
@@ -608,6 +672,9 @@ export function MineRunner() {
       } else if (currentBiome === BIOME_SNOWY) {
         sky.addColorStop(0, "#8098b0"); sky.addColorStop(0.35, "#99aec4");
         sky.addColorStop(0.7, "#b4c6d8"); sky.addColorStop(1, "#c8d8e4");
+      } else if (currentBiome === BIOME_PALE_GARDEN) {
+        sky.addColorStop(0, "#6b7a6b"); sky.addColorStop(0.35, "#8a9888");
+        sky.addColorStop(0.7, "#a4b0a0"); sky.addColorStop(1, "#b8c4b4");
       } else {
         sky.addColorStop(0, "#4a90d9"); sky.addColorStop(0.35, "#72b4e8");
         sky.addColorStop(0.7, "#9ed0f5"); sky.addColorStop(1, "#b8dff7");
@@ -650,7 +717,7 @@ export function MineRunner() {
         const below = gy < WH - 1 && world[gy + 1][gx] !== AIR, right = gx < WW - 1 && world[gy][gx + 1] !== AIR;
         if (above) { ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(bx, by, B, 2); }
         if (left) { ctx.fillStyle = "rgba(0,0,0,0.04)"; ctx.fillRect(bx, by, 2, B); }
-        if (!above && type !== LEAVES && type !== CHERRY_LEAVES && type !== SPRUCE_LEAVES) { ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(bx, by, B, 1); }
+        if (!above && type !== LEAVES && type !== CHERRY_LEAVES && type !== SPRUCE_LEAVES && type !== PALE_LEAVES && type !== PALE_MOSS) { ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(bx, by, B, 1); }
         if (!below) { ctx.fillStyle = "rgba(0,0,0,0.08)"; ctx.fillRect(bx, by + B - 1, B, 1); }
         if (!right) { ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(bx + B - 1, by, 1, B); }
       }
@@ -695,6 +762,16 @@ export function MineRunner() {
               ctx.fillStyle = "rgba(255,255,255,0.6)";
               ctx.fillRect(bx + 4, by - 3, 1, 1);
               ctx.fillRect(bx + 10, by - 5, 1, 1);
+            }
+          } else if (blockType === GRASS && biome === BIOME_PALE_GARDEN) {
+            // Pale garden: gray flowers, pale mushrooms
+            if (r < 0.2) {
+              ctx.fillStyle = "#8a9a7a"; ctx.fillRect(bx + 6, by - 5, 1, 5);
+              ctx.fillStyle = "#c0c8b8"; ctx.fillRect(bx + 5, by - 7, 3, 2);
+            } else if (r < 0.3) {
+              // Pale mushroom
+              ctx.fillStyle = "#b8b0a0"; ctx.fillRect(bx + 7, by - 4, 1, 4);
+              ctx.fillStyle = "#d0c8bc"; ctx.fillRect(bx + 5, by - 6, 5, 2);
             }
           } else if (blockType === SAND && biome === BIOME_DESERT) {
             // Dead bushes
@@ -815,8 +892,8 @@ export function MineRunner() {
       }
 
       // Biome indicator
-      const biomeNames = ["Plains", "Cherry Blossom", "Desert", "Snowy Tundra"];
-      const biomeColors = ["#5da33a", "#F2A0B5", "#D9C479", "#A0D8EF"];
+      const biomeNames = ["Plains", "Cherry Blossom", "Desert", "Snowy Tundra", "Pale Garden"];
+      const biomeColors = ["#5da33a", "#F2A0B5", "#D9C479", "#A0D8EF", "#b8c4b4"];
       ctx.font = "bold 9px monospace"; ctx.textAlign = "right";
       ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillText(biomeNames[currentBiome], canvas.width - 5, 13);
       ctx.fillStyle = biomeColors[currentBiome]; ctx.fillText(biomeNames[currentBiome], canvas.width - 6, 12);

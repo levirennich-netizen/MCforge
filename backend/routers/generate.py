@@ -1,4 +1,4 @@
-"""Generate endpoints — image, SFX, and animated intro generation."""
+"""Generate endpoints — image, SFX, animated intro, and video generation."""
 
 from __future__ import annotations
 
@@ -14,9 +14,10 @@ from models import (
     GenerateImageRequest,
     GenerateSfxRequest,
     GenerateAnimatedIntroRequest,
+    GenerateVideoRequest,
     JobType,
 )
-from pipeline.generate import run_generate_image, run_generate_sfx, run_generate_animated_intro
+from pipeline.generate import run_generate_image, run_generate_sfx, run_generate_animated_intro, run_generate_video
 from services.job_queue import enqueue_job
 
 router = APIRouter(tags=["generate"])
@@ -73,6 +74,24 @@ async def generate_intro(project_id: str, req: GenerateAnimatedIntroRequest):
         subtitle=req.subtitle,
         duration_seconds=req.duration_seconds,
         color_scheme=req.color_scheme,
+    )
+    return {"job_id": job.id, "status": "queued"}
+
+
+@router.post("/projects/{project_id}/generate/video")
+async def generate_video(project_id: str, req: GenerateVideoRequest):
+    """Generate an AI video from a text prompt."""
+    project = db.get_project(project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    job = await enqueue_job(
+        project_id=project_id,
+        job_type=JobType.GENERATE_VIDEO,
+        task_fn=run_generate_video,
+        prompt=req.prompt,
+        model=req.model,
+        duration=req.duration,
     )
     return {"job_id": job.id, "status": "queued"}
 

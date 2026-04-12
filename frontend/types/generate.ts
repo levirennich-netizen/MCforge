@@ -1,4 +1,4 @@
-export type GenerateAssetType = "image" | "sfx" | "animated_intro";
+export type GenerateAssetType = "image" | "sfx" | "animated_intro" | "video";
 export type ImageStyle = "minecraft" | "thumbnail" | "overlay" | "pixel_art";
 export type AnimatedIntroType = "title_card" | "lower_third" | "end_screen";
 export type ColorScheme = "emerald" | "gold" | "crimson" | "diamond";

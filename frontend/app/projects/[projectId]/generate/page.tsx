@@ -14,21 +14,25 @@ import { JobProgressCard } from "@/components/ui/JobProgressCard";
 import { ImageGeneratorForm } from "@/components/generate/ImageGeneratorForm";
 import { SfxGeneratorForm } from "@/components/generate/SfxGeneratorForm";
 import { IntroGeneratorForm } from "@/components/generate/IntroGeneratorForm";
+import { VideoGeneratorForm } from "@/components/generate/VideoGeneratorForm";
 import { AssetGrid } from "@/components/generate/AssetGrid";
 
 const TABS = [
+  { key: "video", label: "Videos" },
   { key: "image", label: "Images" },
   { key: "sfx", label: "Sound Effects" },
   { key: "animated_intro", label: "Animated Intros" },
 ];
 
 const ASSET_TYPE_FOR_TAB: Record<string, GenerateAssetType> = {
+  video: "video",
   image: "image",
   sfx: "sfx",
   animated_intro: "animated_intro",
 };
 
 const JOB_STAGE_FOR_TAB: Record<string, string> = {
+  video: "generate_video",
   image: "generate_image",
   sfx: "generate_sfx",
   animated_intro: "generate_intro",
@@ -39,7 +43,7 @@ export default function GeneratePage() {
   const projectId = params.projectId as string;
   const { activeJobs } = useProjectStore();
 
-  const [activeTab, setActiveTab] = useState("image");
+  const [activeTab, setActiveTab] = useState("video");
   const [assets, setAssets] = useState<GeneratedAsset[]>([]);
 
   useJobProgress(projectId);
@@ -57,7 +61,7 @@ export default function GeneratePage() {
   // Reload when a generate job completes
   const jobEntries = Object.entries(activeJobs);
   const generateJobs = jobEntries.filter(([, j]) =>
-    ["generate_image", "generate_sfx", "generate_intro"].includes(j.stage)
+    ["generate_video", "generate_image", "generate_sfx", "generate_intro"].includes(j.stage)
   );
 
   useEffect(() => {
@@ -101,6 +105,9 @@ export default function GeneratePage() {
 
       {/* Generator Form */}
       <div className="mb-8">
+        {activeTab === "video" && (
+          <VideoGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
+        )}
         {activeTab === "image" && (
           <ImageGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
         )}

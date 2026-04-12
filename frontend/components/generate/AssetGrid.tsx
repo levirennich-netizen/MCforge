@@ -71,7 +71,19 @@ function AssetCard({ asset, projectId, onDeleted }: { asset: GeneratedAsset; pro
   return (
     <Card padding="none" className="overflow-hidden">
       {/* Thumbnail / Preview */}
-      {asset.asset_type === "image" || asset.asset_type === "animated_intro" ? (
+      {asset.asset_type === "video" ? (
+        <div className="relative aspect-video bg-black">
+          <video
+            controls
+            className="w-full h-full"
+            src={fileUrl}
+            poster={thumbUrl}
+          />
+          <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-black/60 text-[10px] text-white/70">
+            {asset.duration_seconds}s
+          </span>
+        </div>
+      ) : asset.asset_type === "image" || asset.asset_type === "animated_intro" ? (
         <div className="relative aspect-video bg-black/30">
           <img
             src={thumbUrl}

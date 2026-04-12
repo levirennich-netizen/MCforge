@@ -45,6 +45,7 @@ class JobType(str, Enum):
     GENERATE_IMAGE = "generate_image"
     GENERATE_SFX = "generate_sfx"
     GENERATE_INTRO = "generate_intro"
+    GENERATE_VIDEO = "generate_video"
 
 
 class JobStatus(str, Enum):
@@ -306,6 +307,7 @@ class GenerateAssetType(str, Enum):
     IMAGE = "image"
     SFX = "sfx"
     ANIMATED_INTRO = "animated_intro"
+    VIDEO = "video"
 
 
 class AnimatedIntroType(str, Enum):
@@ -331,6 +333,12 @@ class GenerateAnimatedIntroRequest(BaseModel):
     subtitle: str = ""
     duration_seconds: float = 5.0
     color_scheme: str = "emerald"  # emerald | gold | crimson | diamond
+
+
+class GenerateVideoRequest(BaseModel):
+    prompt: str
+    model: str = "seedance"  # seedance | wan | wan-fast | veo | ltx-2
+    duration: int = 5  # seconds
 
 
 class GeneratedAsset(BaseModel):
