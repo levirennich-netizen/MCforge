@@ -8,9 +8,9 @@ import numpy as np
 from models import MotionScore
 
 
-def analyze_motion(clip_path: str, sample_interval: float = 0.5) -> list[MotionScore]:
+def analyze_motion(clip_path: str, sample_interval: float = 2.0) -> list[MotionScore]:
     """
-    Compute motion scores per second using optical flow.
+    Compute motion scores using optical flow.
     Returns per-interval motion scores (0.0 = still, 1.0 = max action).
     """
     cap = cv2.VideoCapture(clip_path)
@@ -18,8 +18,7 @@ def analyze_motion(clip_path: str, sample_interval: float = 0.5) -> list[MotionS
         return []
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    frame_interval = int(fps * sample_interval)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_interval = max(int(fps * sample_interval), 1)
 
     scores: list[MotionScore] = []
     prev_gray = None
@@ -31,19 +30,18 @@ def analyze_motion(clip_path: str, sample_interval: float = 0.5) -> list[MotionS
             break
 
         if frame_idx % frame_interval == 0:
-            # Resize for speed
-            small = cv2.resize(frame, (320, 180))
+            # Resize smaller for speed
+            small = cv2.resize(frame, (160, 90))
             gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
             if prev_gray is not None:
                 flow = cv2.calcOpticalFlowFarneback(
                     prev_gray, gray, None,
-                    pyr_scale=0.5, levels=3, winsize=15,
-                    iterations=3, poly_n=5, poly_sigma=1.2, flags=0,
+                    pyr_scale=0.5, levels=2, winsize=11,
+                    iterations=2, poly_n=5, poly_sigma=1.2, flags=0,
                 )
                 magnitude = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
                 avg_magnitude = float(np.mean(magnitude))
-                # Normalize to 0-1 range (typical values 0-20)
                 normalized = min(avg_magnitude / 15.0, 1.0)
 
                 timestamp = frame_idx / fps

@@ -275,35 +275,15 @@ async def analyze_clip(
     timestamps = [(s.start_time + s.end_time) / 2 for s in scenes]
     frame_paths = extract_keyframes(clip_path, project_id, clip_id, timestamps)
 
-    # Step 4: Frame classification — AI vision if available, else local OpenCV
+    # Step 4: Frame classification — fast local OpenCV (no slow AI API calls)
     if progress_callback:
-        progress_callback("Classifying frames with AI...")
+        progress_callback("Classifying frames...")
     frame_analyses = []
-
-    # Try AI vision for all frames in one batch-style approach
-    ai_available = False
-    try:
-        from config import settings
-        if settings.GROQ_API_KEY or settings.GEMINI_API_KEY:
-            ai_available = True
-    except Exception:
-        pass
 
     for i, (path, ts) in enumerate(zip(frame_paths, timestamps)):
         try:
             motion = get_motion_at(ts)
-            result = None
-
-            # Try AI vision first
-            if ai_available:
-                try:
-                    result = await _classify_frame_ai(str(path), motion)
-                except Exception as e:
-                    print(f"AI vision failed for frame {i} ({e}), using local")
-
-            # Fallback to local OpenCV
-            if result is None:
-                result = classify_frame_local(str(path), motion_score=motion)
+            result = classify_frame_local(str(path), motion_score=motion)
 
             frame_analyses.append(FrameAnalysis(
                 timestamp=ts,

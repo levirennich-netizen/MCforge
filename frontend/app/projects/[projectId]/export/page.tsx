@@ -56,8 +56,9 @@ export default function ExportPage() {
         include_music: includeMusic,
       });
       toast.info("Export started...");
-    } catch {
-      toast.error("Failed to start export");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to start export";
+      toast.error(msg);
     }
   };
 

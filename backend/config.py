@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # Server
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001"]
+    CORS_ORIGINS: list[str] = ["*"]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_JOBS: int = 1
 
     # Whisper
-    WHISPER_MODEL_SIZE: str = "base"
+    WHISPER_MODEL_SIZE: str = "tiny"
     WHISPER_DEVICE: str = "cpu"
 
     model_config = {
