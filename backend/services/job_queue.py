@@ -83,3 +83,7 @@ async def _run_job(job: Job, task_fn: Callable, **kwargs: Any) -> None:
             completed_at=now_iso(),
         )
         traceback.print_exc()
+
+    # Clean up progress store after a delay so SSE has time to send the final event
+    await asyncio.sleep(10)
+    _progress_store.pop(job.id, None)
