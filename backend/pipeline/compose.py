@@ -116,7 +116,9 @@ def _trim_segment(
         "-pix_fmt", "yuv420p",
         str(output_path),
     ])
-    subprocess.run(cmd, capture_output=True, timeout=300)
+    result = subprocess.run(cmd, capture_output=True, timeout=300)
+    if result.returncode != 0:
+        raise RuntimeError(f"Segment trim failed: {result.stderr.decode()[:500]}")
 
 
 def _build_atempo_chain(speed: float) -> str:
@@ -128,7 +130,7 @@ def _build_atempo_chain(speed: float) -> str:
         remaining /= 2.0
     while remaining < 0.5:
         filters.append("atempo=0.5")
-        remaining /= 0.5
+        remaining *= 2.0
     filters.append(f"atempo={remaining:.4f}")
     return ",".join(filters)
 
@@ -147,8 +149,10 @@ def _concat_segments(paths: list[Path], output_path: Path) -> None:
         "-c", "copy",
         str(output_path),
     ]
-    subprocess.run(cmd, capture_output=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, timeout=600)
     list_file.unlink(missing_ok=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"Concat failed: {result.stderr.decode()[:500]}")
 
 
 def _mix_with_narration(video_path: Path, narration_path: str, output_path: Path) -> None:
@@ -164,4 +168,6 @@ def _mix_with_narration(video_path: Path, narration_path: str, output_path: Path
         "-c:a", "aac", "-b:a", "192k",
         str(output_path),
     ]
-    subprocess.run(cmd, capture_output=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, timeout=600)
+    if result.returncode != 0:
+        raise RuntimeError(f"Audio mix failed: {result.stderr.decode()[:500]}")

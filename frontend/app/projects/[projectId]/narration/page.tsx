@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { getVoices, generateNarration } from "@/lib/api";
+import { getVoices, generateNarration, uploadNarration } from "@/lib/api";
 import { useProjectStore } from "@/stores/project-store";
 import { useJobProgress } from "@/lib/sse";
 import { toast, catchToast } from "@/lib/toast";
@@ -46,13 +46,8 @@ export default function NarrationPage() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
     try {
-      await fetch(`http://localhost:8000/projects/${projectId}/narration/upload`, {
-        method: "POST",
-        body: formData,
-      });
+      await uploadNarration(projectId, file);
       toast.success("Narration uploaded successfully");
     } catch {
       toast.error("Failed to upload narration");

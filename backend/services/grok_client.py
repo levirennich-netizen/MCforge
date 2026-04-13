@@ -253,6 +253,8 @@ _EDGE_VOICE_MAP = {
     "rex": "en-US-GuyNeural",
     "eve": "en-US-JennyNeural",
     "sal": "en-US-AriaNeural",
+    "ara": "en-US-SaraNeural",
+    "leo": "en-US-DavisNeural",
 }
 
 

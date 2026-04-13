@@ -180,6 +180,16 @@ export const generateNarration = (projectId: string, voiceId: string = "rex", in
 
 export const getVoices = () => get<Voice[]>("/tts/voices");
 
+export async function uploadNarration(projectId: string, file: File): Promise<void> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetchWithRetry(`${API_BASE}/projects/${projectId}/narration/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw await toAPIError(res);
+}
+
 // ── Auto-Edit (one-click AI video) ────────────────────────────────────────
 
 export const startAutoEdit = (projectId: string, style: string = "high_energy", quality: string = "1080p", prompt: string = "") =>

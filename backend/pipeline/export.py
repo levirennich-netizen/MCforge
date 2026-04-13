@@ -62,8 +62,9 @@ async def export_final(
         f"pad={q['resolution']}:(ow-iw)/2:(oh-ih)/2",
     ]
     if subtitle_path and Path(subtitle_path).exists():
-        sub_posix = Path(subtitle_path).as_posix()
-        vf.append(f"subtitles='{sub_posix}'")
+        # FFmpeg subtitle filter needs special escaping: \ → \\\\ and : → \\:
+        sub_esc = Path(subtitle_path).as_posix().replace("\\", "\\\\\\\\").replace(":", "\\\\:")
+        vf.append(f"subtitles={sub_esc}")
 
     cmd.extend(["-vf", ",".join(vf)])
     cmd.extend([
