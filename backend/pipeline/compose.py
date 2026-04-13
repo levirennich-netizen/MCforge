@@ -81,6 +81,22 @@ async def compose_video(
     return final_path
 
 
+def _has_audio(input_path: str) -> bool:
+    """Check if a video file has an audio stream."""
+    cmd = [
+        settings.FFPROBE_PATH, "-v", "quiet",
+        "-select_streams", "a",
+        "-show_entries", "stream=codec_type",
+        "-of", "csv=p=0",
+        str(input_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=10, text=True)
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
 def _trim_segment(
     input_path: str,
     output_path: Path,
@@ -90,8 +106,11 @@ def _trim_segment(
     quality: str,
 ) -> None:
     """Trim a single segment with speed adjustment."""
-    q = {"preview": ("28", "ultrafast"), "1080p": ("18", "medium"), "4k": ("15", "slow")}
+    # Use fast presets — Render free tier has weak CPU
+    q = {"preview": ("28", "ultrafast"), "1080p": ("22", "veryfast"), "4k": ("18", "fast")}
     crf, preset = q.get(quality, q["preview"])
+
+    has_audio = _has_audio(input_path)
 
     cmd = [
         settings.FFMPEG_PATH, "-y",
@@ -102,21 +121,29 @@ def _trim_segment(
 
     if speed != 1.0:
         pts = 1.0 / speed
-        # atempo only supports 0.5-2.0, chain for extreme values
-        atempo_chain = _build_atempo_chain(speed)
-        cmd.extend([
-            "-filter_complex",
-            f"[0:v]setpts={pts}*PTS[v];[0:a]{atempo_chain}[a]",
-            "-map", "[v]", "-map", "[a]",
-        ])
+        if has_audio:
+            atempo_chain = _build_atempo_chain(speed)
+            cmd.extend([
+                "-filter_complex",
+                f"[0:v]setpts={pts}*PTS[v];[0:a]{atempo_chain}[a]",
+                "-map", "[v]", "-map", "[a]",
+            ])
+        else:
+            cmd.extend(["-vf", f"setpts={pts}*PTS"])
 
     cmd.extend([
         "-c:v", "libx264", "-preset", preset, "-crf", crf,
-        "-c:a", "aac", "-b:a", "128k",
         "-pix_fmt", "yuv420p",
-        str(output_path),
     ])
-    result = subprocess.run(cmd, capture_output=True, timeout=300)
+
+    if has_audio:
+        cmd.extend(["-c:a", "aac", "-b:a", "128k"])
+    else:
+        cmd.append("-an")
+
+    cmd.append(str(output_path))
+
+    result = subprocess.run(cmd, capture_output=True, timeout=600)
     if result.returncode != 0:
         raise RuntimeError(f"Segment trim failed: {result.stderr.decode()[:500]}")
 

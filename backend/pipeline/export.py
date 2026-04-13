@@ -21,17 +21,17 @@ QUALITY_PRESETS = {
     },
     "1080p": {
         "resolution": "1920:1080",
-        "crf": "18",
-        "preset": "medium",
+        "crf": "22",
+        "preset": "veryfast",
         "audio_bitrate": "192k",
-        "fps": "60",
+        "fps": "30",
     },
     "4k": {
         "resolution": "3840:2160",
-        "crf": "15",
-        "preset": "slow",
+        "crf": "18",
+        "preset": "fast",
         "audio_bitrate": "320k",
-        "fps": "60",
+        "fps": "30",
     },
 }
 
