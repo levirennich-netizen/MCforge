@@ -107,17 +107,32 @@ export default function ProjectPage() {
     }
   };
 
-  // Clear localBusy once SSE delivers real job progress for the same stage
+  // Clear localBusy once SSE delivers a *running* job for the same stage
   const jobEntries = Object.entries(activeJobs);
   const hasRunningJobs = jobEntries.some(([, j]) => j.status === "running");
+  const sseHasLocalBusyStage = localBusy
+    ? jobEntries.some(([, j]) => j.stage === localBusy && j.status === "running")
+    : false;
   useEffect(() => {
-    if (localBusy && (hasRunningJobs || jobEntries.some(([, j]) => j.stage === localBusy))) {
+    if (localBusy && sseHasLocalBusyStage) {
       setLocalBusy(null);
     }
-  }, [hasRunningJobs, localBusy, jobEntries]);
+  }, [localBusy, sseHasLocalBusyStage]);
+
+  // Clear localBusy when any job with matching stage completes or fails
+  const analyzeJob = Object.values(activeJobs).find((j) => j.stage === "analyze");
+  const planJob = Object.values(activeJobs).find((j) => j.stage === "plan");
+  const autoEditJob = Object.values(activeJobs).find((j) => j.stage === "auto_edit");
+  useEffect(() => {
+    if (analyzeJob?.status === "completed" || analyzeJob?.status === "failed") {
+      setLocalBusy((prev) => prev === "analyze" ? null : prev);
+    }
+    if (planJob?.status === "completed" || planJob?.status === "failed") {
+      setLocalBusy((prev) => prev === "plan" ? null : prev);
+    }
+  }, [analyzeJob?.status, planJob?.status]);
 
   // Refresh exports when auto_edit job completes or show error on failure
-  const autoEditJob = Object.values(activeJobs).find((j) => j.stage === "auto_edit");
   useEffect(() => {
     if (autoEditJob?.status === "completed") {
       setLocalBusy(null);
