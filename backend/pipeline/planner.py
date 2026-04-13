@@ -131,112 +131,29 @@ async def generate_edit_plan(
     custom_prompt: str = "",
     progress_callback=None,
 ) -> EditPlan:
-    """Use Grok with function calling to generate a structured edit plan."""
+    """Generate a structured edit plan — uses AI if available, local analysis otherwise."""
 
     style = STYLE_CONFIGS[style_preset]
 
-    # Build analysis summary for Grok
-    clips_summary = []
-    for analysis in analyses:
-        clip_info = {"clip_id": analysis.clip_id}
-
-        if analysis.video:
-            v = analysis.video
-            clip_info["scenes"] = [
-                {"start": s.start_time, "end": s.end_time}
-                for s in v.scenes
-            ]
-            clip_info["highlights"] = v.highlight_timestamps
-            clip_info["avg_excitement"] = v.avg_excitement
-            clip_info["frame_descriptions"] = [
-                {
-                    "timestamp": f.timestamp,
-                    "categories": f.categories,
-                    "excitement": f.excitement,
-                    "description": f.description,
-                }
-                for f in v.frame_analyses
-            ]
-
-        if analysis.audio:
-            a = analysis.audio
-            clip_info["silence_segments"] = [
-                {"start": s.start, "end": s.end}
-                for s in a.silence_segments
-            ]
-            clip_info["game_events"] = [
-                {"timestamp": e.timestamp, "type": e.event_type}
-                for e in a.game_events
-            ]
-
-        clips_summary.append(clip_info)
-
     if progress_callback:
-        progress_callback("Generating edit plan with AI...")
+        progress_callback("Generating edit plan...")
 
-    system_prompt = f"""You are an expert Minecraft YouTube video editor.
-Style preset: {style_preset.value} - {style['description']}
+    # Use AI if a valid API key is configured, otherwise go straight to local planner
+    from config import settings
+    has_ai = bool(settings.GROQ_API_KEY) or bool(settings.GEMINI_API_KEY) or (
+        settings.XAI_API_KEY and settings.XAI_API_KEY != "xai-your-key-here"
+    )
 
-EDITING RULES:
-- Minimum segment duration: {style['min_segment_duration']}s
-- Maximum segment duration: {style['max_segment_duration']}s
-- Preferred transition: {style['transition_style']}
-- SFX density: {style['sfx_density']}
-- Music style: {style['music_style']}
-
-PRIORITIES:
-1. Remove boring parts (IDLE, INVENTORY, long silence)
-2. Keep all highlights (excitement >= 7)
-3. Order segments for engaging flow (hook first, build tension, climax)
-4. Add appropriate effects and SFX for the style
-5. Start with the most exciting moment (hook)
-6. Keep total duration around {target_duration or 'auto (3-8 minutes)'}s
-
-AVAILABLE SFX: mining, explosion, mob_hit, mob_death, player_damage, item_pickup,
-chest_open, portal, achievement, transition_whoosh, bass_drop, funny_fail, oof, bruh,
-ding, pop, woosh
-
-Call the create_edit_plan function with your editing decisions.
-{f'{chr(10)}USER INSTRUCTIONS: {custom_prompt}' if custom_prompt else ''}"""
-
-    try:
-        result = await chat_completion(
-            messages=[
-                {"role": "system", "content": system_prompt + "\n\nRespond with ONLY valid JSON (no markdown, no code fences). The JSON must have: segments (array), background_music (string), reasoning (string)."},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Here are the analyzed clips:\n\n"
-                        f"{json.dumps(clips_summary, indent=2)}\n\n"
-                        f"Create an optimized edit plan for a {style_preset.value} Minecraft YouTube video. "
-                        f"Return ONLY the JSON object."
-                    ),
-                },
-            ],
-            temperature=0.7,
-            max_tokens=8192,
-        )
-
-        # Parse JSON from response
-        content = result.get("content", "")
+    args = None
+    if has_ai:
         try:
-            # Strip markdown code fences if present
-            clean = content.strip()
-            if clean.startswith("```"):
-                clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
-                clean = clean.rsplit("```", 1)[0]
-            start = clean.find("{")
-            end = clean.rfind("}") + 1
-            if start >= 0 and end > start:
-                args = json.loads(clean[start:end])
-            else:
-                args = _fallback_plan(analyses, style_preset, target_duration)
-        except (json.JSONDecodeError, ValueError):
-            args = _fallback_plan(analyses, style_preset, target_duration)
-    except Exception as e:
-        print(f"AI API failed for plan generation ({e}), using fallback planner")
+            args = await _ai_plan(analyses, style_preset, style, target_duration, custom_prompt)
+        except Exception as e:
+            print(f"AI planner failed ({e}), using local planner")
+
+    if args is None:
         if progress_callback:
-            progress_callback("AI unavailable, generating plan locally...")
+            progress_callback("Building edit plan from analysis...")
         args = _fallback_plan(analyses, style_preset, target_duration)
 
     # Convert to EditPlan model
@@ -281,37 +198,134 @@ Call the create_edit_plan function with your editing decisions.
     )
 
 
+async def _ai_plan(
+    analyses: list[AnalysisResult],
+    style_preset: StylePreset,
+    style: dict,
+    target_duration: Optional[float],
+    custom_prompt: str,
+) -> dict:
+    """Generate plan using AI API."""
+    clips_summary = []
+    for analysis in analyses:
+        clip_info = {"clip_id": analysis.clip_id}
+        if analysis.video:
+            v = analysis.video
+            clip_info["scenes"] = [{"start": s.start_time, "end": s.end_time} for s in v.scenes]
+            clip_info["highlights"] = v.highlight_timestamps
+            clip_info["avg_excitement"] = v.avg_excitement
+            clip_info["frame_descriptions"] = [
+                {"timestamp": f.timestamp, "categories": f.categories, "excitement": f.excitement}
+                for f in v.frame_analyses
+            ]
+        clips_summary.append(clip_info)
+
+    system_prompt = (
+        f"You are an expert Minecraft YouTube video editor.\n"
+        f"Style: {style_preset.value} - {style['description']}\n"
+        f"Segment duration: {style['min_segment_duration']}-{style['max_segment_duration']}s\n"
+        f"Target duration: {target_duration or '3-8 minutes'}\n"
+        f"{f'USER INSTRUCTIONS: {custom_prompt}' if custom_prompt else ''}\n\n"
+        f"Respond with ONLY valid JSON: {{\"segments\": [...], \"background_music\": \"...\", \"reasoning\": \"...\"}}\n"
+        f"Each segment: {{\"clip_id\", \"start_time\", \"end_time\", \"label\", \"transition_in\": \"cut\", \"speed_factor\": 1.0}}"
+    )
+
+    result = await chat_completion(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Clips:\n{json.dumps(clips_summary, indent=2)}"},
+        ],
+        temperature=0.7,
+        max_tokens=8192,
+    )
+
+    content = result.get("content", "")
+    clean = content.strip()
+    if clean.startswith("```"):
+        clean = clean.split("\n", 1)[1] if "\n" in clean else clean[3:]
+        clean = clean.rsplit("```", 1)[0]
+    start = clean.find("{")
+    end = clean.rfind("}") + 1
+    if start >= 0 and end > start:
+        return json.loads(clean[start:end])
+    raise ValueError("AI returned no valid JSON")
+
+
 def _fallback_plan(
     analyses: list[AnalysisResult],
     style_preset: StylePreset,
     target_duration: Optional[float],
 ) -> dict:
-    """Generate a basic plan from highlights when AI fails."""
-    segments = []
+    """Generate a plan locally from scene analysis — no AI needed."""
+    style = STYLE_CONFIGS[style_preset]
+    min_dur = style["min_segment_duration"]
+    max_dur = style["max_segment_duration"]
+
+    # Collect all scenes with their excitement scores
+    scored_scenes = []
     for analysis in analyses:
         if not analysis.video:
             continue
-        for scene in analysis.video.scenes:
-            # Find excitement for this scene
-            excitement = 5
-            for fa in analysis.video.frame_analyses:
-                if scene.start_time <= fa.timestamp <= scene.end_time:
-                    excitement = fa.excitement
-                    break
-            if excitement >= 5:  # Keep moderately interesting scenes
-                segments.append({
-                    "clip_id": analysis.clip_id,
-                    "start_time": scene.start_time,
-                    "end_time": scene.end_time,
-                    "label": f"Scene (excitement: {excitement})",
-                    "transition_in": "cut",
-                    "effects": [],
-                    "sfx": [],
-                })
+
+        if analysis.video.scenes:
+            for scene in analysis.video.scenes:
+                # Find best excitement score for this scene
+                best_excitement = 3
+                for fa in analysis.video.frame_analyses:
+                    if scene.start_time <= fa.timestamp <= scene.end_time:
+                        best_excitement = max(best_excitement, fa.excitement)
+                duration = scene.end_time - scene.start_time
+                if duration >= min_dur:
+                    scored_scenes.append({
+                        "clip_id": analysis.clip_id,
+                        "start_time": scene.start_time,
+                        "end_time": min(scene.end_time, scene.start_time + max_dur),
+                        "excitement": best_excitement,
+                    })
+        else:
+            # No scenes detected — use the whole clip
+            scored_scenes.append({
+                "clip_id": analysis.clip_id,
+                "start_time": 0.0,
+                "end_time": max_dur,  # Cap at max segment duration
+                "excitement": analysis.video.avg_excitement if analysis.video else 5,
+            })
+
+    # If still nothing, create a segment from each analysis clip
+    if not scored_scenes:
+        for analysis in analyses:
+            scored_scenes.append({
+                "clip_id": analysis.clip_id,
+                "start_time": 0.0,
+                "end_time": 10.0,
+                "excitement": 5,
+            })
+
+    # Sort by excitement (highest first = hook), then keep within target duration
+    scored_scenes.sort(key=lambda s: s["excitement"], reverse=True)
+
+    target = target_duration or 120.0  # Default 2 minutes
+    segments = []
+    total_dur = 0.0
+    for scene in scored_scenes:
+        seg_dur = scene["end_time"] - scene["start_time"]
+        if total_dur + seg_dur > target and segments:
+            break
+        segments.append({
+            "clip_id": scene["clip_id"],
+            "start_time": scene["start_time"],
+            "end_time": scene["end_time"],
+            "label": f"Scene (excitement: {scene['excitement']})",
+            "transition_in": "cut",
+            "effects": [],
+            "sfx": [],
+            "speed_factor": 1.0,
+        })
+        total_dur += seg_dur
 
     return {
         "segments": segments,
-        "background_music": STYLE_CONFIGS[style_preset]["music_style"],
+        "background_music": style["music_style"],
         "music_volume": 0.3,
-        "reasoning": "Fallback plan: included all scenes with excitement >= 5",
+        "reasoning": f"Local planner: {len(segments)} scenes sorted by excitement, target {target}s",
     }

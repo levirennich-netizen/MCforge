@@ -22,9 +22,11 @@ export function useJobProgress(projectId: string | null) {
           stage: event.stage,
         });
 
-        // Auto-remove completed/failed jobs after 4 seconds
-        if (event.status === "completed" || event.status === "failed") {
+        // Auto-remove completed jobs after 4s, failed after 15s so user can read error
+        if (event.status === "completed") {
           setTimeout(() => removeJob(event.job_id), 4000);
+        } else if (event.status === "failed") {
+          setTimeout(() => removeJob(event.job_id), 15000);
         }
       });
 

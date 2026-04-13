@@ -97,12 +97,14 @@ export default function ProjectPage() {
     }
   };
 
-  // Refresh exports when auto_edit job completes
+  // Refresh exports when auto_edit job completes or show error on failure
   const autoEditJob = Object.values(activeJobs).find((j) => j.stage === "auto_edit");
   useEffect(() => {
     if (autoEditJob?.status === "completed") {
       listExports(projectId).then(setExports).catch(() => {});
       toast.success("Your video is ready!");
+    } else if (autoEditJob?.status === "failed") {
+      toast.error(`Video generation failed: ${autoEditJob.message}`);
     }
   }, [autoEditJob?.status, projectId]);
 
