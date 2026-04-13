@@ -23,11 +23,14 @@ const PALE_WOOD = 25, PALE_LEAVES = 26, PALE_MOSS = 27;
 // Nether blocks
 const NETHERRACK = 28, SOUL_SAND = 29, NETHER_BRICK = 30, GLOWSTONE = 31,
   LAVA = 32, NETHER_WART_BLOCK = 33, CRIMSON_STEM = 34, BASALT = 35, NETHERITE_ORE = 36;
+// End blocks
+const END_STONE = 37, OBSIDIAN = 38, PURPUR = 39, CHORUS_PLANT = 40, DRAGON_EGG = 41;
 
 const BLOCK_SET = new Set([GRASS, DIRT, STONE, WOOD, LEAVES, COAL, DIAMOND, BEDROCK, SAND, PLANK,
   CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES,
   PALE_WOOD, PALE_LEAVES, PALE_MOSS,
-  NETHERRACK, SOUL_SAND, NETHER_BRICK, GLOWSTONE, LAVA, NETHER_WART_BLOCK, CRIMSON_STEM, BASALT, NETHERITE_ORE]);
+  NETHERRACK, SOUL_SAND, NETHER_BRICK, GLOWSTONE, LAVA, NETHER_WART_BLOCK, CRIMSON_STEM, BASALT, NETHERITE_ORE,
+  END_STONE, OBSIDIAN, PURPUR, CHORUS_PLANT, DRAGON_EGG]);
 const isBlock = (id: number) => BLOCK_SET.has(id);
 
 // ── Tool item IDs (11-17) ──
@@ -45,6 +48,8 @@ const ITEM_NAMES: Record<number, string> = {
   [NETHERRACK]: "Netherrack", [SOUL_SAND]: "Soul Sand", [NETHER_BRICK]: "Nether Brick",
   [GLOWSTONE]: "Glowstone", [LAVA]: "Lava", [NETHER_WART_BLOCK]: "Nether Wart Block",
   [CRIMSON_STEM]: "Crimson Stem", [BASALT]: "Basalt", [NETHERITE_ORE]: "Ancient Debris",
+  [END_STONE]: "End Stone", [OBSIDIAN]: "Obsidian", [PURPUR]: "Purpur Block",
+  [CHORUS_PLANT]: "Chorus Plant", [DRAGON_EGG]: "Dragon Egg",
   [WOOD_PICK]: "Wood Pickaxe", [STONE_PICK]: "Stone Pickaxe", [DIAMOND_PICK]: "Diamond Pickaxe",
   [WOOD_SWORD]: "Wood Sword", [STONE_SWORD]: "Stone Sword", [DIAMOND_SWORD]: "Diamond Sword",
   [TORCH]: "Torch",
@@ -91,7 +96,7 @@ function getBiome(x: number, seed: number): number {
 // ── Texture atlas ──
 function buildAtlas(): HTMLCanvasElement {
   const atlas = document.createElement("canvas");
-  atlas.width = B * 37;
+  atlas.width = B * 42;
   atlas.height = B;
   const ac = atlas.getContext("2d")!;
   const hexRgb = (h: string): [number, number, number] => {
@@ -287,15 +292,52 @@ function buildAtlas(): HTMLCanvasElement {
           break;
         }
         case NETHERITE_ORE: {
-          // Ancient Debris look: dark brown netherrack with golden-brown veins
           const adPal = ["#4A3228", "#3E2820", "#564038", "#332018", "#4C3830"];
           rgb = vary(pick(adPal, x, y, 360), x, y, 10);
-          // Spiral/swirl pattern
           if ((Math.abs(x - 4) + Math.abs(y - 5) < 3) || (Math.abs(x - 11) + Math.abs(y - 10) < 2.5) || (Math.abs(x - 7) + Math.abs(y - 3) < 2)) {
             rgb = hash(x, y, 361) < 0.5 ? [180, 140, 80] : [160, 120, 60];
           }
-          // Slight glow at edges
           if (hash(x, y, 362) < 0.06) rgb = [200, 160, 90];
+          break;
+        }
+        // ── End blocks ──
+        case END_STONE: {
+          const esPal = ["#DDDBA5", "#D5D39D", "#E5E3AD", "#CDC995", "#D9D7A1"];
+          rgb = vary(pick(esPal, x, y, 370), x, y, 12);
+          if (hash(x, y, 371) < 0.1) rgb = [Math.max(0, rgb[0] - 15), Math.max(0, rgb[1] - 15), Math.max(0, rgb[2] - 10)];
+          break;
+        }
+        case OBSIDIAN: {
+          const obPal = ["#0E0520", "#120828", "#0A0318", "#160A30", "#100620"];
+          rgb = vary(pick(obPal, x, y, 380), x, y, 8);
+          if (hash(x, y, 381) < 0.08) rgb = [Math.min(255, rgb[0] + 30), Math.min(255, rgb[1] + 15), Math.min(255, rgb[2] + 50)];
+          break;
+        }
+        case PURPUR: {
+          const ppPal = ["#A878A8", "#9C6C9C", "#B484B4", "#9060A0", "#AA7CAA"];
+          const brickX = Math.floor(x / 4), brickY = Math.floor(y / 4);
+          rgb = vary(pick(ppPal, brickX, brickY, 390), x, y, 10);
+          if (x % 4 === 0 || y % 4 === 0) rgb = [Math.max(0, rgb[0] - 18), Math.max(0, rgb[1] - 18), Math.max(0, rgb[2] - 18)];
+          break;
+        }
+        case CHORUS_PLANT: {
+          const cpPal = ["#8A508A", "#7A4580", "#9A5B95", "#6E3A70", "#8C528C"];
+          rgb = vary(pick(cpPal, x, y, 400), x, y, 14);
+          if (hash(x, y, 401) < 0.12) rgb = [Math.min(255, rgb[0] + 30), Math.min(255, rgb[1] + 20), Math.min(255, rgb[2] + 30)];
+          // Flower tips
+          if (y < 3 && hash(x, y, 402) < 0.3) rgb = [Math.min(255, rgb[0] + 50), rgb[1], Math.min(255, rgb[2] + 50)];
+          break;
+        }
+        case DRAGON_EGG: {
+          const dePal = ["#0C0C14", "#101020", "#08080E", "#14142A", "#0E0E18"];
+          rgb = vary(pick(dePal, x, y, 410), x, y, 8);
+          // Purple sparkle spots
+          if (hash(x, y, 411) < 0.12) rgb = [140, 60, 200];
+          if (hash(x, y, 412) < 0.05) rgb = [200, 100, 255];
+          // Egg shape: round the corners
+          const cx = x - B / 2, cy = y - B / 2;
+          const dist = Math.sqrt(cx * cx * 1.2 + cy * cy * 0.8);
+          if (dist > 7) rgb = [0, 0, 0]; // transparent-ish (black void)
           break;
         }
         default: rgb = [255, 0, 255];
@@ -306,7 +348,8 @@ function buildAtlas(): HTMLCanvasElement {
   }
   for (let t = 1; t <= 10; t++) gen(t);
   [CHERRY_WOOD, CHERRY_LEAVES, SNOW, ICE, CACTUS, SANDSTONE, SPRUCE_LEAVES, PALE_WOOD, PALE_LEAVES, PALE_MOSS,
-   NETHERRACK, SOUL_SAND, NETHER_BRICK, GLOWSTONE, LAVA, NETHER_WART_BLOCK, CRIMSON_STEM, BASALT, NETHERITE_ORE].forEach(gen);
+   NETHERRACK, SOUL_SAND, NETHER_BRICK, GLOWSTONE, LAVA, NETHER_WART_BLOCK, CRIMSON_STEM, BASALT, NETHERITE_ORE,
+   END_STONE, OBSIDIAN, PURPUR, CHORUS_PLANT, DRAGON_EGG].forEach(gen);
   return atlas;
 }
 
@@ -566,6 +609,106 @@ function genNetherWorld(seed: number) {
   return w;
 }
 
+// ── End World gen ──
+function genEndWorld(seed: number) {
+  const w: number[][] = Array.from({ length: WH }, () => new Array(WW).fill(AIR));
+
+  // The End: floating main island + smaller islands, void below
+  // Main central island
+  const centerX = Math.floor(WW / 2);
+  const islandY = Math.floor(WH * 0.55); // floating platform level
+  const islandRadius = 18;
+
+  // Generate main island (elliptical end stone platform)
+  for (let x = centerX - islandRadius; x <= centerX + islandRadius; x++) {
+    if (x < 0 || x >= WW) continue;
+    const dx = (x - centerX) / islandRadius;
+    const thickness = Math.floor((1 - dx * dx) * 6) + 2;
+    const topY = islandY - Math.floor((1 - dx * dx) * 2); // slight dome
+    for (let dy = 0; dy < thickness; dy++) {
+      const y = topY + dy;
+      if (y >= 0 && y < WH) w[y][x] = END_STONE;
+    }
+  }
+
+  // Obsidian pillars (end crystals)
+  const pillarPositions = [centerX - 10, centerX - 4, centerX + 5, centerX + 12];
+  for (const px of pillarPositions) {
+    if (px < 0 || px >= WW) continue;
+    const pillarH = 8 + Math.floor(hash(px, 0, seed + 600) * 10);
+    const pillarTop = islandY - pillarH;
+    for (let y = pillarTop; y <= islandY; y++) {
+      if (y >= 0 && y < WH) {
+        w[y][px] = OBSIDIAN;
+        if (px + 1 < WW) w[y][px + 1] = OBSIDIAN;
+      }
+    }
+    // "End crystal" glow on top
+    if (pillarTop - 1 >= 0) w[pillarTop - 1][px] = GLOWSTONE;
+  }
+
+  // Smaller floating islands
+  const smallIslands = [
+    { x: centerX - 30, y: islandY + 3, r: 6 },
+    { x: centerX + 28, y: islandY - 2, r: 7 },
+    { x: centerX - 45, y: islandY + 5, r: 5 },
+    { x: centerX + 42, y: islandY + 4, r: 4 },
+  ];
+  for (const isle of smallIslands) {
+    for (let x = isle.x - isle.r; x <= isle.x + isle.r; x++) {
+      if (x < 0 || x >= WW) continue;
+      const dx = (x - isle.x) / isle.r;
+      const thickness = Math.floor((1 - dx * dx) * 3) + 1;
+      for (let dy = 0; dy < thickness; dy++) {
+        const y = isle.y + dy;
+        if (y >= 0 && y < WH) w[y][x] = END_STONE;
+      }
+    }
+  }
+
+  // Chorus plants on the islands
+  for (let x = 2; x < WW - 2; x++) {
+    if (hash(x, 0, seed + 620) > 0.08) continue;
+    // Find end stone surface at this x
+    for (let y = 0; y < WH - 1; y++) {
+      if (w[y][x] === END_STONE && (y === 0 || w[y - 1][x] === AIR)) {
+        const ch = 3 + Math.floor(hash(x, 1, seed + 621) * 4);
+        for (let t = 1; t <= ch; t++) {
+          if (y - t >= 0 && w[y - t][x] === AIR) w[y - t][x] = CHORUS_PLANT;
+        }
+        // Branch
+        if (hash(x, 2, seed + 622) < 0.5 && x + 1 < WW && y - 2 >= 0 && w[y - 2][x + 1] === AIR) {
+          w[y - 2][x + 1] = CHORUS_PLANT;
+          if (y - 3 >= 0 && w[y - 3][x + 1] === AIR) w[y - 3][x + 1] = CHORUS_PLANT;
+        }
+        break;
+      }
+    }
+  }
+
+  // Purpur structures
+  const purpurX = centerX + 15;
+  if (purpurX + 3 < WW) {
+    const baseY = islandY;
+    for (let dy = -5; dy <= 0; dy++) for (let dx = 0; dx < 4; dx++) {
+      const y = baseY + dy, x = purpurX + dx;
+      if (y >= 0 && y < WH && x < WW && w[y][x] === AIR) w[y][x] = PURPUR;
+    }
+  }
+
+  // Place the Dragon Egg on top of the tallest obsidian pillar
+  const tallestPillar = pillarPositions.reduce((best, px) => {
+    const h = 8 + Math.floor(hash(px, 0, seed + 600) * 10);
+    return h > best.h ? { px, h } : best;
+  }, { px: pillarPositions[0], h: 0 });
+  const eggY = islandY - tallestPillar.h - 2;
+  if (eggY >= 0 && tallestPillar.px < WW) {
+    w[eggY][tallestPillar.px] = DRAGON_EGG;
+  }
+
+  return w;
+}
+
 interface Cloud { x: number; y: number; w: number; h: number; speed: number }
 function genClouds(seed: number): Cloud[] {
   const clouds: Cloud[] = [];
@@ -589,6 +732,8 @@ const BLOCK_COLOR: Record<number, string> = {
   [NETHERRACK]: "#6B2020", [SOUL_SAND]: "#4A3828", [NETHER_BRICK]: "#2C1016",
   [GLOWSTONE]: "#D4A840", [LAVA]: "#CF4A00", [NETHER_WART_BLOCK]: "#730A0A",
   [CRIMSON_STEM]: "#6B2040", [BASALT]: "#3A3A40", [NETHERITE_ORE]: "#4A3228",
+  [END_STONE]: "#DDDBA5", [OBSIDIAN]: "#0E0520", [PURPUR]: "#A878A8",
+  [CHORUS_PLANT]: "#8A508A", [DRAGON_EGG]: "#0C0C14",
 };
 
 // Tool colors for icon drawing
@@ -730,10 +875,11 @@ export function MineRunner() {
       clouds: genClouds(seed), particles: [] as Particle[],
       miningBlock: null as { bx: number; by: number; t: number } | null,
       mouseDown: false,
-      dimension: "overworld" as "overworld" | "nether",
+      dimension: "overworld" as "overworld" | "nether" | "end",
       portalAnim: 0, // > 0 means portal animation is playing
       victory: false,
       pendingTeleport: false,
+      pendingDimension: "" as string,
     };
     stateRef.current = s;
 
@@ -755,6 +901,24 @@ export function MineRunner() {
       addChat("You entered the Nether!", "#f44");
       addChat("Find and mine the Ancient Debris!", "#ffd700");
       addChat("(Only a Diamond Pickaxe can break it)", "#aaa");
+    };
+
+    // Teleport to The End function
+    const teleportToEnd = () => {
+      s.portalAnim = 60;
+      s.dimension = "end";
+      world = genEndWorld(seed + 1337);
+      s.world = world;
+      const eSpawnX = Math.floor(WW / 2);
+      let eSpawnY = 0;
+      for (let y = 0; y < WH; y++) { if (world[y][eSpawnX] !== AIR) { eSpawnY = y - 2; break; } }
+      s.px = eSpawnX * B + 2;
+      s.py = eSpawnY * B;
+      s.vx = 0; s.vy = 0;
+      s.camX = s.px - canvas.width / 2;
+      s.camY = s.py - canvas.height / 2;
+      addChat("You entered The End!", "#c070ff");
+      addChat("Find the Dragon Egg atop the tallest pillar!", "#ffd700");
     };
 
     addChat("Welcome to MineRunner!", "#5f5");
@@ -790,10 +954,11 @@ export function MineRunner() {
         return; // Freeze gameplay during portal animation
       }
 
-      // Handle pending teleport from crafting
+      // Handle pending teleport
       if (s.pendingTeleport) {
         s.pendingTeleport = false;
-        teleportToNether();
+        if (s.pendingDimension === "end") teleportToEnd();
+        else teleportToNether();
         return;
       }
 
@@ -854,12 +1019,13 @@ export function MineRunner() {
         const hov = getHovered();
         if (hov && s.world[hov.by][hov.bx] !== AIR && s.world[hov.by][hov.bx] !== BEDROCK && s.world[hov.by][hov.bx] !== LAVA) {
           const blockType = s.world[hov.by][hov.bx];
-          // Netherite ore: only diamond pickaxe can mine it
-          if (blockType === NETHERITE_ORE && s.hotbar[s.selected] !== DIAMOND_PICK) {
+          // Netherite ore + Dragon Egg: only diamond pickaxe can mine
+          if ((blockType === NETHERITE_ORE || blockType === DRAGON_EGG) && s.hotbar[s.selected] !== DIAMOND_PICK) {
             s.miningBlock = null;
           } else if (s.miningBlock && s.miningBlock.bx === hov.bx && s.miningBlock.by === hov.by) {
             s.miningBlock.t += 1;
-            if (s.miningBlock.t >= (blockType === NETHERITE_ORE ? 20 : mineTime)) {
+            const specialTime = (blockType === NETHERITE_ORE || blockType === DRAGON_EGG) ? 20 : mineTime;
+            if (s.miningBlock.t >= specialTime) {
               const type = s.world[hov.by][hov.bx];
               s.world[hov.by][hov.bx] = AIR;
               s.inventory.set(type, (s.inventory.get(type) || 0) + 1);
@@ -870,11 +1036,18 @@ export function MineRunner() {
                 s.particles.push({ x: hov.bx * B + B / 2, y: hov.by * B + B / 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, life: 1, color: col });
               }
               s.miningBlock = null;
-              // Victory on mining Netherite ore!
+              // Netherite ore → teleport to The End
               if (type === NETHERITE_ORE) {
+                s.pendingTeleport = true;
+                s.pendingDimension = "end";
+                addChat("*** ANCIENT DEBRIS MINED! ***", "#ffd700");
+                addChat("A portal to The End opens...", "#c070ff");
+              }
+              // Dragon Egg → Victory!
+              if (type === DRAGON_EGG) {
                 s.victory = true;
-                addChat("*** YOU FOUND ANCIENT DEBRIS! ***", "#ffd700");
-                addChat("You conquered the Nether! GG!", "#5f5");
+                addChat("*** DRAGON EGG CLAIMED! ***", "#ffd700");
+                addChat("You beat MineRunner! GG!", "#5f5");
               }
             }
           } else s.miningBlock = { bx: hov.bx, by: hov.by, t: 0 };
@@ -927,14 +1100,16 @@ export function MineRunner() {
       ctx.imageSmoothingEnabled = false;
 
       const isNether = s.dimension === "nether";
+      const isEnd = s.dimension === "end";
 
       // Portal animation overlay
       if (s.portalAnim > 0) {
         const prog = s.portalAnim / 60;
-        ctx.fillStyle = `rgba(80, 0, 120, ${prog})`;
+        const goingToEnd = s.dimension === "end";
+        ctx.fillStyle = goingToEnd ? `rgba(0, 0, 0, ${prog})` : `rgba(80, 0, 120, ${prog})`;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         // Swirling particles
-        ctx.fillStyle = "#c070ff";
+        ctx.fillStyle = goingToEnd ? "#40e0d0" : "#c070ff";
         for (let i = 0; i < 20; i++) {
           const angle = (Date.now() * 0.003 + i * 0.5) % (Math.PI * 2);
           const radius = (1 - prog) * 150;
@@ -942,19 +1117,34 @@ export function MineRunner() {
           const py = canvas.height / 2 + Math.sin(angle) * radius;
           ctx.fillRect(px, py, 4, 4);
         }
+        // Stars for End portal
+        if (goingToEnd) {
+          ctx.fillStyle = "#fff";
+          for (let i = 0; i < 30; i++) {
+            const sx = hash(i, 0, 950) * canvas.width;
+            const sy = hash(i, 1, 951) * canvas.height;
+            const twinkle = Math.sin(Date.now() * 0.005 + i) * 0.5 + 0.5;
+            ctx.globalAlpha = twinkle * prog;
+            ctx.fillRect(sx, sy, 2, 2);
+          }
+          ctx.globalAlpha = 1;
+        }
         ctx.font = "bold 18px monospace"; ctx.textAlign = "center";
-        ctx.fillStyle = "#e0a0ff";
-        ctx.fillText("Entering the Nether...", canvas.width / 2, canvas.height / 2);
+        ctx.fillStyle = goingToEnd ? "#40e0d0" : "#e0a0ff";
+        ctx.fillText(goingToEnd ? "Entering The End..." : "Entering the Nether...", canvas.width / 2, canvas.height / 2);
         return;
       }
 
       // Determine biome at camera center for sky tinting
       const camCenterX = Math.floor((s.camX + canvas.width / 2) / B);
-      const currentBiome = isNether ? -1 : getBiome(Math.max(0, Math.min(WW - 1, camCenterX)), seed);
+      const currentBiome = (isNether || isEnd) ? -1 : getBiome(Math.max(0, Math.min(WW - 1, camCenterX)), seed);
 
       // Sky with biome tint
       const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      if (isNether) {
+      if (isEnd) {
+        sky.addColorStop(0, "#030008"); sky.addColorStop(0.3, "#060010");
+        sky.addColorStop(0.6, "#0a0018"); sky.addColorStop(1, "#0e0020");
+      } else if (isNether) {
         sky.addColorStop(0, "#1a0000"); sky.addColorStop(0.3, "#2a0505");
         sky.addColorStop(0.6, "#3a0a0a"); sky.addColorStop(1, "#4a1010");
       } else if (currentBiome === BIOME_CHERRY) {
@@ -975,7 +1165,7 @@ export function MineRunner() {
       }
       ctx.fillStyle = sky; ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      if (!isNether) {
+      if (!isNether && !isEnd) {
         // Sun
         const sunX = canvas.width * 0.8 - s.camX * 0.01;
         ctx.fillStyle = "#fff7b0"; ctx.beginPath(); ctx.arc(sunX, 40, 20, 0, Math.PI * 2); ctx.fill();
@@ -1000,7 +1190,7 @@ export function MineRunner() {
             ctx.fillStyle = "rgba(255,255,255,0.85)";
           }
         }
-      } else {
+      } else if (isNether) {
         // Nether: lava glow particles in the air
         ctx.fillStyle = "rgba(255,100,0,0.15)";
         for (let i = 0; i < 12; i++) {
@@ -1008,6 +1198,29 @@ export function MineRunner() {
           const py = (hash(i, Math.floor(Date.now() * 0.0003), 901) * canvas.height * 0.5);
           ctx.fillRect(px, py, 2 + hash(i, 0, 902) * 3, 2 + hash(i, 1, 903) * 3);
         }
+      } else {
+        // The End: stars
+        ctx.fillStyle = "#fff";
+        for (let i = 0; i < 40; i++) {
+          const sx = hash(i, 0, 960) * canvas.width;
+          const sy = hash(i, 1, 961) * canvas.height * 0.6;
+          const twinkle = Math.sin(Date.now() * 0.002 + i * 1.5) * 0.4 + 0.6;
+          ctx.globalAlpha = twinkle;
+          ctx.fillRect(sx, sy, hash(i, 2, 962) < 0.3 ? 2 : 1, hash(i, 2, 962) < 0.3 ? 2 : 1);
+        }
+        ctx.globalAlpha = 1;
+        // Ender dragon silhouette hint (subtle wing shapes far away)
+        const dragonX = canvas.width * 0.5 + Math.sin(Date.now() * 0.0008) * 80;
+        const dragonY = 50 + Math.sin(Date.now() * 0.001) * 15;
+        ctx.fillStyle = "rgba(30,0,50,0.4)";
+        // Body
+        ctx.fillRect(dragonX - 8, dragonY, 16, 5);
+        // Wings
+        const wingFlap = Math.sin(Date.now() * 0.006) * 4;
+        ctx.fillRect(dragonX - 25, dragonY - wingFlap, 18, 3);
+        ctx.fillRect(dragonX + 8, dragonY + wingFlap, 18, 3);
+        // Head
+        ctx.fillRect(dragonX + 12, dragonY - 2, 6, 4);
       }
 
       // Blocks
@@ -1028,6 +1241,12 @@ export function MineRunner() {
           ctx.fillStyle = `rgba(255,200,80,${shimmer})`;
           ctx.fillRect(bx, by, B, B);
         }
+        // Dragon egg glow
+        if (type === DRAGON_EGG) {
+          const glow = Math.sin(Date.now() * 0.004) * 0.2 + 0.25;
+          ctx.fillStyle = `rgba(160,60,255,${glow})`;
+          ctx.fillRect(bx - 2, by - 2, B + 4, B + 4);
+        }
         const above = gy > 0 && s.world[gy - 1][gx] !== AIR, left = gx > 0 && s.world[gy][gx - 1] !== AIR;
         const below = gy < WH - 1 && s.world[gy + 1][gx] !== AIR, right = gx < WW - 1 && s.world[gy][gx + 1] !== AIR;
         if (above) { ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(bx, by, B, 2); }
@@ -1038,7 +1257,7 @@ export function MineRunner() {
       }
 
       // Biome-specific decorations (overworld only)
-      if (!isNether) for (let gx = bsx; gx < bex; gx++) {
+      if (!isNether && !isEnd) for (let gx = bsx; gx < bex; gx++) {
         const biome = getBiome(gx, seed);
         for (let gy = bsy; gy < bey; gy++) {
           const blockType = s.world[gy][gx];
@@ -1208,7 +1427,10 @@ export function MineRunner() {
 
       // Biome / dimension indicator
       ctx.font = "bold 9px monospace"; ctx.textAlign = "right";
-      if (isNether) {
+      if (isEnd) {
+        ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillText("The End", canvas.width - 5, 13);
+        ctx.fillStyle = "#c070ff"; ctx.fillText("The End", canvas.width - 6, 12);
+      } else if (isNether) {
         ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.fillText("The Nether", canvas.width - 5, 13);
         ctx.fillStyle = "#ff4444"; ctx.fillText("The Nether", canvas.width - 6, 12);
       } else {
@@ -1225,22 +1447,28 @@ export function MineRunner() {
 
       // Victory overlay
       if (s.victory) {
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        // Gold shimmer border
+        // Purple + gold shimmer border
         const shimmer = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
-        ctx.strokeStyle = `rgba(255,200,50,${shimmer})`;
+        ctx.strokeStyle = `rgba(200,100,255,${shimmer})`;
         ctx.lineWidth = 4;
-        ctx.strokeRect(20, canvas.height / 2 - 50, canvas.width - 40, 100);
+        ctx.strokeRect(20, canvas.height / 2 - 55, canvas.width - 40, 110);
+        ctx.strokeStyle = `rgba(255,200,50,${shimmer * 0.7})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(24, canvas.height / 2 - 51, canvas.width - 48, 102);
         ctx.font = "bold 22px monospace"; ctx.textAlign = "center";
-        ctx.fillStyle = "#ffd700";
-        ctx.fillText("ANCIENT DEBRIS FOUND!", canvas.width / 2, canvas.height / 2 - 10);
+        ctx.fillStyle = "#c070ff";
+        ctx.fillText("DRAGON EGG CLAIMED!", canvas.width / 2, canvas.height / 2 - 15);
         ctx.font = "bold 14px monospace";
+        ctx.fillStyle = "#ffd700";
+        ctx.fillText("You beat MineRunner!", canvas.width / 2, canvas.height / 2 + 10);
+        ctx.font = "bold 12px monospace";
         ctx.fillStyle = "#5f5";
-        ctx.fillText("You conquered the Nether! GG!", canvas.width / 2, canvas.height / 2 + 20);
+        ctx.fillText("Overworld -> Nether -> The End -> Victory!", canvas.width / 2, canvas.height / 2 + 30);
         ctx.font = "10px monospace";
         ctx.fillStyle = "#aaa";
-        ctx.fillText("You can keep exploring or start a new world", canvas.width / 2, canvas.height / 2 + 42);
+        ctx.fillText("You can keep exploring or start a new world", canvas.width / 2, canvas.height / 2 + 48);
       }
     };
 
