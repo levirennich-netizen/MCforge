@@ -841,20 +841,6 @@ export function MineRunner() {
       }
 
       addChat(`Crafted ${recipe.count}x ${ITEM_NAMES[recipe.result]}!`, "#5f5");
-
-      // Diamond pickaxe crafted → trigger Nether teleport
-      if (recipe.result === DIAMOND_PICK) {
-        addChat(`[DEBUG] dim=${s.dimension} fn=${!!s.teleportToNether}`, "#ff0");
-        if (s.dimension === "overworld") {
-          if (s.teleportToNether) {
-            addChat("Teleporting to Nether...", "#f44");
-            s.teleportToNether();
-          } else {
-            addChat("Setting pendingTeleport flag...", "#f44");
-            s.pendingTeleport = true;
-          }
-        }
-      }
     } else {
       addChat(`<You> ${trimmed}`, "#ddd");
     }
@@ -887,10 +873,7 @@ export function MineRunner() {
       dimension: "overworld" as "overworld" | "nether" | "end",
       portalAnim: 0, // > 0 means portal animation is playing
       victory: false,
-      pendingTeleport: false,
-      pendingDimension: "" as string,
-      teleportToNether: null as (() => void) | null,
-      teleportToEnd: null as (() => void) | null,
+      hasEnteredNether: false,
     };
     stateRef.current = s;
 
@@ -932,10 +915,6 @@ export function MineRunner() {
       addChat("Find the Dragon Egg atop the tallest pillar!", "#ffd700");
     };
 
-    // Store teleport functions on state so handleCommand can call them
-    s.teleportToNether = teleportToNether;
-    s.teleportToEnd = teleportToEnd;
-
     addChat("Welcome to MineRunner!", "#5f5");
     addChat("Explore biomes: Plains, Cherry, Desert, Snowy, Pale Garden", "#aaa");
     addChat("Type /help for commands, /recipes to craft", "#aaa");
@@ -969,11 +948,10 @@ export function MineRunner() {
         return; // Freeze gameplay during portal animation
       }
 
-      // Handle pending teleport
-      if (s.pendingTeleport) {
-        s.pendingTeleport = false;
-        if (s.pendingDimension === "end") teleportToEnd();
-        else teleportToNether();
+      // Auto-teleport: detect diamond pickaxe in inventory → go to Nether
+      if (s.dimension === "overworld" && !s.hasEnteredNether && s.inventory.has(DIAMOND_PICK)) {
+        s.hasEnteredNether = true;
+        teleportToNether();
         return;
       }
 
