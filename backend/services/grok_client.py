@@ -160,63 +160,43 @@ async def analyze_image(
         return {"raw": content}
 
 
-async def _fetch_image_with_retry(prompt: str, width: int = 1920, height: int = 1080, retries: int = 3) -> bytes:
-    """Fetch a single image with retries and longer timeout."""
-    import asyncio
-    for attempt in range(retries):
-        try:
-            return await generate_image_pollinations(prompt, width=width, height=height)
-        except Exception:
-            if attempt < retries - 1:
-                await asyncio.sleep(2 * (attempt + 1))
-    return b""
-
-
 async def generate_video_pollinations(
     prompt: str,
     model: str = "cinematic",
     duration: int = 5,
 ) -> bytes:
-    """Generate a video from AI images + FFmpeg Ken Burns effects (free).
+    """Generate a video from AI images + FFmpeg slideshow (free, fast).
 
-    Generates multiple AI images via Pollinations (free, no key needed),
-    then combines them into a cinematic video with zoom/pan transitions.
+    Generates 2 AI images via Pollinations (free), then builds a simple
+    slideshow video — no heavy zoompan processing.
     """
     import asyncio
+    import subprocess
     import tempfile
     from config import settings
 
-    # Generate more images for longer videos
-    num_images = max(3, duration // 2)
-    secs_per_image = duration / num_images
+    # Just 2 images — fast to generate and process
+    prompts = [prompt, f"{prompt}, different angle, different composition"]
 
-    # Create varied prompts for each frame
-    variations = [
-        prompt,
-        f"{prompt}, different angle",
-        f"{prompt}, close-up shot",
-        f"{prompt}, wide establishing shot",
-        f"{prompt}, dramatic lighting",
-        f"{prompt}, aerial view",
-        f"{prompt}, action moment",
-        f"{prompt}, epic scene",
-    ]
-
-    # Generate images one at a time to avoid rate limits
     image_bytes_list: list[bytes] = []
-    for i in range(num_images):
-        img = await _fetch_image_with_retry(variations[i % len(variations)])
-        if img and len(img) > 1000:
-            image_bytes_list.append(img)
-        # Small delay between requests to avoid rate limiting
-        if i < num_images - 1:
-            await asyncio.sleep(1)
+    for i, p in enumerate(prompts):
+        for attempt in range(2):
+            try:
+                img = await generate_image_pollinations(p, width=1280, height=720)
+                if img and len(img) > 1000:
+                    image_bytes_list.append(img)
+                    break
+            except Exception:
+                if attempt == 0:
+                    await asyncio.sleep(2)
 
-    if len(image_bytes_list) < 2:
-        raise RuntimeError(f"Failed to generate enough images for video (got {len(image_bytes_list)}/{num_images})")
+    if not image_bytes_list:
+        raise RuntimeError("Failed to generate any images")
 
-    # Write images to temp dir and build video with FFmpeg
+    secs_per_image = duration / len(image_bytes_list)
+
     with tempfile.TemporaryDirectory() as tmpdir:
+        # Write images
         img_paths = []
         for i, img_bytes in enumerate(image_bytes_list):
             path = Path(tmpdir) / f"img_{i:03d}.jpg"
@@ -224,78 +204,31 @@ async def generate_video_pollinations(
             img_paths.append(path)
 
         output_path = Path(tmpdir) / "output.mp4"
-        _build_kenburns_video(img_paths, output_path, secs_per_image, settings.FFMPEG_PATH)
-        return output_path.read_bytes()
 
-
-def _build_kenburns_video(
-    img_paths: list[Path], output_path: Path,
-    secs_per_image: float, ffmpeg_path: str,
-) -> None:
-    """Build a Ken Burns video from images using FFmpeg.
-
-    Simple approach: render each image as a clip with zoompan, then concat.
-    """
-    import subprocess
-
-    tmpdir = output_path.parent
-    clip_paths = []
-
-    # Step 1: Render each image as a short video clip with zoom effect
-    zoom_styles = [
-        # Slow zoom in to center
-        "zoompan=z='min(zoom+0.0015,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'",
-        # Slow zoom in from top-left
-        "zoompan=z='min(zoom+0.001,1.2)':x='iw/4-(iw/zoom/4)':y='ih/4-(ih/zoom/4)'",
-        # Slow zoom in from right
-        "zoompan=z='min(zoom+0.002,1.3)':x='iw*3/4-(iw/zoom*3/4)':y='ih/2-(ih/zoom/2)'",
-    ]
-
-    frames = int(secs_per_image * 25)
-
-    for i, img_path in enumerate(img_paths):
-        clip_path = tmpdir / f"clip_{i:03d}.mp4"
-        zoom = zoom_styles[i % len(zoom_styles)]
-        vf = f"{zoom}:d={frames}:s=1280x720:fps=25"
+        # Build concat file — each image shown for secs_per_image
+        concat_file = Path(tmpdir) / "concat.txt"
+        with open(concat_file, "w") as f:
+            for img_path in img_paths:
+                f.write(f"file '{img_path.as_posix()}'\n")
+                f.write(f"duration {secs_per_image}\n")
+            # Repeat last image to avoid FFmpeg truncation
+            f.write(f"file '{img_paths[-1].as_posix()}'\n")
 
         cmd = [
-            ffmpeg_path, "-y",
-            "-loop", "1", "-i", str(img_path),
-            "-vf", vf,
-            "-t", str(secs_per_image),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            str(clip_path),
+            settings.FFMPEG_PATH, "-y",
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_file),
+            "-vf", "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+            "-r", "15",
+            "-t", str(duration),
+            str(output_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, timeout=60)
-        if result.returncode == 0 and clip_path.exists():
-            clip_paths.append(clip_path)
+        result = subprocess.run(cmd, capture_output=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg slideshow failed: {result.stderr.decode()[:300]}")
 
-    if not clip_paths:
-        raise RuntimeError("FFmpeg failed to render any clips from images")
-
-    # Step 2: Concat all clips using the concat demuxer
-    concat_file = tmpdir / "concat.txt"
-    with open(concat_file, "w") as f:
-        for cp in clip_paths:
-            f.write(f"file '{cp.as_posix()}'\n")
-
-    cmd = [
-        ffmpeg_path, "-y",
-        "-f", "concat", "-safe", "0",
-        "-i", str(concat_file),
-        "-c", "copy",
-        str(output_path),
-    ]
-    result = subprocess.run(cmd, capture_output=True, timeout=60)
-
-    # Cleanup temp clips
-    for cp in clip_paths:
-        cp.unlink(missing_ok=True)
-    concat_file.unlink(missing_ok=True)
-
-    if result.returncode != 0:
-        raise RuntimeError(f"FFmpeg concat failed: {result.stderr.decode()[:500]}")
+        return output_path.read_bytes()
 
 
 async def generate_image_pollinations(
