@@ -11,9 +11,8 @@ from services.job_queue import enqueue_job, update_progress
 
 
 async def run_analysis(project_id: str, job_id: str) -> None:
-    """Run full analysis pipeline for all clips in a project."""
+    """Run analysis pipeline for all clips (lightweight to fit 512MB RAM)."""
     from pipeline.analyze_video import analyze_clip
-    from pipeline.analyze_audio import analyze_clip_audio
 
     clips = db.get_clips(project_id)
     if not clips:
@@ -24,40 +23,25 @@ async def run_analysis(project_id: str, job_id: str) -> None:
     total = len(clips)
     try:
         for i, clip in enumerate(clips):
-            base_progress = i / total
-            step_size = 1.0 / total
-
-            def make_callback(base, size, idx=i):
+            def make_callback(idx=i):
                 def cb(msg):
-                    update_progress(job_id, project_id, base + size * 0.5,
+                    update_progress(job_id, project_id, idx / total,
                                   f"Clip {idx+1}/{total}: {msg}", "analyze")
                 return cb
 
-            callback = make_callback(base_progress, step_size)
-
-            # Video analysis
             video_analysis = await analyze_clip(
-                clip.id, clip.file_path, project_id, progress_callback=callback,
+                clip.id, clip.file_path, project_id,
+                lightweight=True,  # Skip OpenCV to stay within 512MB
+                progress_callback=make_callback(),
             )
 
-            # Audio analysis
-            audio_analysis = None
-            if clip.audio_path:
-                audio_analysis = await analyze_clip_audio(
-                    clip.id, clip.audio_path,
-                    video_analysis=video_analysis,
-                    whisper_model=settings.WHISPER_MODEL_SIZE,
-                    progress_callback=callback,
-                )
-
-            # Save results
-            db.save_analysis(clip.id, project_id, video_analysis, audio_analysis)
+            # Skip audio analysis (Whisper is too heavy for free-tier)
+            db.save_analysis(clip.id, project_id, video_analysis, None)
             update_progress(
                 job_id, project_id, (i + 1) / total,
                 f"Analyzed clip {i+1}/{total}", "analyze",
             )
     except Exception:
-        # Reset project status so user can retry
         db.update_project_status(project_id, "uploaded")
         raise
 
@@ -146,7 +130,7 @@ async def run_auto_edit(
     if not clips:
         raise RuntimeError("No clips uploaded. Upload at least one clip first.")
 
-    # ── Step 1: Analyze all clips (video only — skip heavy Whisper to save RAM) ──
+    # ── Step 1: Analyze all clips (lightweight — no OpenCV/Whisper to save RAM) ──
     db.update_project_status(project_id, "analyzing")
     for i, clip in enumerate(clips):
         update_progress(
@@ -157,6 +141,7 @@ async def run_auto_edit(
         try:
             video_analysis = await analyze_clip(
                 clip.id, clip.file_path, project_id,
+                lightweight=True,  # Skip OpenCV to stay within 512MB
                 progress_callback=lambda msg, _i=i: update_progress(
                     job_id, project_id, (_i / len(clips)) * 0.33,
                     f"Clip {_i+1}: {msg}", "auto_edit"),
@@ -165,7 +150,6 @@ async def run_auto_edit(
             raise RuntimeError(f"Clip file missing: {clip.filename}. Please re-upload.")
         except Exception as e:
             print(f"Analysis failed for clip {clip.id}: {e}")
-            # Create minimal analysis so pipeline can continue
             from models import VideoAnalysis as VA, SceneSegment as SS, FrameAnalysis as FA
             video_analysis = VA(
                 clip_id=clip.id,
@@ -176,7 +160,6 @@ async def run_auto_edit(
                 avg_excitement=5.0,
                 highlight_timestamps=[],
             )
-        # Skip audio analysis in auto-edit (Whisper is too heavy for free-tier servers)
         db.save_analysis(clip.id, project_id, video_analysis, None)
 
     # ── Step 2: Generate AI edit plan ──

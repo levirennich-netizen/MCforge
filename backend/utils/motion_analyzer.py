@@ -1,9 +1,6 @@
-"""Optical flow motion analysis using OpenCV."""
+"""Optical flow motion analysis using OpenCV (lazy-loaded)."""
 
 from __future__ import annotations
-
-import cv2
-import numpy as np
 
 from models import MotionScore
 
@@ -13,6 +10,9 @@ def analyze_motion(clip_path: str, sample_interval: float = 2.0) -> list[MotionS
     Compute motion scores using optical flow.
     Returns per-interval motion scores (0.0 = still, 1.0 = max action).
     """
+    import cv2
+    import numpy as np
+
     cap = cv2.VideoCapture(clip_path)
     if not cap.isOpened():
         return []
