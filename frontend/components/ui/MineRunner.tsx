@@ -843,11 +843,16 @@ export function MineRunner() {
       addChat(`Crafted ${recipe.count}x ${ITEM_NAMES[recipe.result]}!`, "#5f5");
 
       // Diamond pickaxe crafted → trigger Nether teleport
-      if (recipe.result === DIAMOND_PICK && s.dimension === "overworld") {
-        if (s.teleportToNether) {
-          s.teleportToNether();
-        } else {
-          s.pendingTeleport = true;
+      if (recipe.result === DIAMOND_PICK) {
+        addChat(`[DEBUG] dim=${s.dimension} fn=${!!s.teleportToNether}`, "#ff0");
+        if (s.dimension === "overworld") {
+          if (s.teleportToNether) {
+            addChat("Teleporting to Nether...", "#f44");
+            s.teleportToNether();
+          } else {
+            addChat("Setting pendingTeleport flag...", "#f44");
+            s.pendingTeleport = true;
+          }
         }
       }
     } else {
