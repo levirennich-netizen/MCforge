@@ -844,7 +844,11 @@ export function MineRunner() {
 
       // Diamond pickaxe crafted → trigger Nether teleport
       if (recipe.result === DIAMOND_PICK && s.dimension === "overworld") {
-        s.pendingTeleport = true;
+        if (s.teleportToNether) {
+          s.teleportToNether();
+        } else {
+          s.pendingTeleport = true;
+        }
       }
     } else {
       addChat(`<You> ${trimmed}`, "#ddd");
@@ -880,6 +884,8 @@ export function MineRunner() {
       victory: false,
       pendingTeleport: false,
       pendingDimension: "" as string,
+      teleportToNether: null as (() => void) | null,
+      teleportToEnd: null as (() => void) | null,
     };
     stateRef.current = s;
 
@@ -920,6 +926,10 @@ export function MineRunner() {
       addChat("You entered The End!", "#c070ff");
       addChat("Find the Dragon Egg atop the tallest pillar!", "#ffd700");
     };
+
+    // Store teleport functions on state so handleCommand can call them
+    s.teleportToNether = teleportToNether;
+    s.teleportToEnd = teleportToEnd;
 
     addChat("Welcome to MineRunner!", "#5f5");
     addChat("Explore biomes: Plains, Cherry, Desert, Snowy, Pale Garden", "#aaa");
@@ -1038,10 +1048,9 @@ export function MineRunner() {
               s.miningBlock = null;
               // Netherite ore → teleport to The End
               if (type === NETHERITE_ORE) {
-                s.pendingTeleport = true;
-                s.pendingDimension = "end";
                 addChat("*** ANCIENT DEBRIS MINED! ***", "#ffd700");
                 addChat("A portal to The End opens...", "#c070ff");
+                teleportToEnd();
               }
               // Dragon Egg → Victory!
               if (type === DRAGON_EGG) {
