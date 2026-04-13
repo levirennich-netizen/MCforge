@@ -18,6 +18,7 @@ import { Skeleton, SkeletonClip } from "@/components/ui/Skeleton";
 import { DropZone } from "@/components/upload/DropZone";
 import { ClipCard } from "@/components/upload/ClipCard";
 import { HighlightCard } from "@/components/analysis/HighlightCard";
+import { MineRunner } from "@/components/ui/MineRunner";
 
 const STEPS = [
   { key: "upload", label: "Upload" },
@@ -41,6 +42,7 @@ export default function ProjectPage() {
   const [videoPrompt, setVideoPrompt] = useState("");
   const [loadingClips, setLoadingClips] = useState(true);
   const [loadingExports, setLoadingExports] = useState(true);
+  const [localBusy, setLocalBusy] = useState<string | null>(null); // "auto_edit" | "analyze" | "plan" | null
 
   useJobProgress(projectId);
 
@@ -72,40 +74,57 @@ export default function ProjectPage() {
   }, [projectId, clips.length, addClip]);
 
   const handleAnalyze = async () => {
+    setLocalBusy("analyze");
     try {
       await startAnalysis(projectId);
       toast.info("Analysis started");
     } catch (err) {
+      setLocalBusy(null);
       toast.error(err instanceof Error ? err.message : "Failed to start analysis");
     }
   };
 
   const handleGeneratePlan = async () => {
+    setLocalBusy("plan");
     try {
       await generatePlan(projectId, project?.style_preset || "high_energy");
       toast.info("Generating edit plan...");
     } catch (err) {
+      setLocalBusy(null);
       const msg = err instanceof Error ? err.message : "Failed to start plan generation";
       toast.error(msg);
     }
   };
 
   const handleAutoEdit = async () => {
+    setLocalBusy("auto_edit");
     try {
       await startAutoEdit(projectId, project?.style_preset || "high_energy", "1080p", videoPrompt);
       toast.info("AI is making your video...");
     } catch (err) {
+      setLocalBusy(null);
       toast.error(err instanceof Error ? err.message : "Failed to start auto-edit");
     }
   };
+
+  // Clear localBusy once SSE delivers real job progress for the same stage
+  const jobEntries = Object.entries(activeJobs);
+  const hasRunningJobs = jobEntries.some(([, j]) => j.status === "running");
+  useEffect(() => {
+    if (localBusy && (hasRunningJobs || jobEntries.some(([, j]) => j.stage === localBusy))) {
+      setLocalBusy(null);
+    }
+  }, [hasRunningJobs, localBusy, jobEntries]);
 
   // Refresh exports when auto_edit job completes or show error on failure
   const autoEditJob = Object.values(activeJobs).find((j) => j.stage === "auto_edit");
   useEffect(() => {
     if (autoEditJob?.status === "completed") {
+      setLocalBusy(null);
       listExports(projectId).then(setExports).catch(() => {});
       toast.success("Your video is ready!");
     } else if (autoEditJob?.status === "failed") {
+      setLocalBusy(null);
       toast.error(`Video generation failed: ${autoEditJob.message}`);
     }
   }, [autoEditJob?.status, projectId]);
@@ -143,8 +162,7 @@ export default function ProjectPage() {
     );
   }
 
-  const jobEntries = Object.entries(activeJobs);
-  const hasRunningJobs = jobEntries.some(([, j]) => j.status === "running");
+  const isBusy = hasRunningJobs || !!localBusy;
 
   return (
     <PageContainer>
@@ -170,8 +188,16 @@ export default function ProjectPage() {
       />
 
       {/* Job Progress */}
-      {jobEntries.length > 0 && (
+      {(jobEntries.length > 0 || localBusy) && (
         <div className="mb-6 space-y-2.5">
+          {localBusy && !hasRunningJobs && (
+            <JobProgressCard
+              stage={localBusy}
+              status="running"
+              progress={0}
+              message="Starting up..."
+            />
+          )}
           {jobEntries.map(([jobId, job]) => (
             <JobProgressCard
               key={jobId}
@@ -181,6 +207,23 @@ export default function ProjectPage() {
               message={job.message}
             />
           ))}
+        </div>
+      )}
+
+      {/* MineRunner while AI is working */}
+      {isBusy && (
+        <div className="mb-6 space-y-3">
+          <div className="text-center space-y-1">
+            <p className="text-sm text-foreground/80 font-medium">
+              {localBusy === "auto_edit" || autoEditJob?.status === "running"
+                ? "Generating your video — this usually takes 2-5 minutes"
+                : localBusy === "analyze" || Object.values(activeJobs).find((j) => j.stage === "analyze" && j.status === "running")
+                ? "Analyzing your clips — this usually takes 1-3 minutes"
+                : "Working on it — hang tight!"}
+            </p>
+            <p className="text-xs text-muted">Play MineRunner while you wait!</p>
+          </div>
+          <MineRunner />
         </div>
       )}
 
@@ -257,17 +300,17 @@ export default function ProjectPage() {
               onChange={(e) => setVideoPrompt(e.target.value)}
               placeholder="Describe your video... e.g. &quot;Epic Minecraft montage with fast cuts and dramatic moments&quot;"
               rows={3}
-              disabled={hasRunningJobs}
+              disabled={isBusy}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-emerald-500/50 resize-none mb-3 disabled:opacity-40"
             />
             <Button
               onClick={handleAutoEdit}
-              disabled={clips.length === 0 || hasRunningJobs || loadingClips}
-              loading={hasRunningJobs}
+              disabled={clips.length === 0 || isBusy || loadingClips}
+              loading={isBusy}
               size="lg"
               className="w-full !text-xl !py-5 !from-emerald-500 !to-green-600 hover:!from-emerald-400 hover:!to-green-500 !shadow-[0_4px_16px_rgba(0,0,0,0.4),0_0_30px_rgba(16,185,129,0.3)]"
             >
-              {hasRunningJobs ? "Working..." : "Generate Video"}
+              {isBusy ? "Working..." : "Generate Video"}
             </Button>
             <p className="text-xs text-muted text-center mt-2">
               AI analyzes, edits, and exports your video
@@ -304,16 +347,16 @@ export default function ProjectPage() {
             <div className="space-y-2.5">
               <Button
                 onClick={handleAnalyze}
-                disabled={clips.length === 0 || hasRunningJobs}
-                loading={hasRunningJobs && !!Object.values(activeJobs).find((j) => j.stage === "analyze")}
+                disabled={clips.length === 0 || isBusy}
+                loading={localBusy === "analyze" || !!Object.values(activeJobs).find((j) => j.stage === "analyze" && j.status === "running")}
                 className="w-full !from-blue-500 !to-blue-600 hover:!from-blue-400 hover:!to-blue-500 !shadow-[0_1px_2px_rgba(0,0,0,0.3),0_0_12px_rgba(59,130,246,0.15)]"
               >
                 Analyze Clips
               </Button>
               <Button
                 onClick={handleGeneratePlan}
-                disabled={hasRunningJobs}
-                loading={hasRunningJobs && !!Object.values(activeJobs).find((j) => j.stage === "plan")}
+                disabled={isBusy}
+                loading={localBusy === "plan" || !!Object.values(activeJobs).find((j) => j.stage === "plan" && j.status === "running")}
                 className="w-full !from-purple-500 !to-purple-600 hover:!from-purple-400 hover:!to-purple-500 !shadow-[0_1px_2px_rgba(0,0,0,0.3),0_0_12px_rgba(168,85,247,0.15)]"
               >
                 Generate Edit Plan
