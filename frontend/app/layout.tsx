@@ -33,14 +33,14 @@ export default function RootLayout({
           alt=""
           fill
           priority
-          quality={60}
+          quality={75}
           placeholder="empty"
           style={{
             position: "fixed",
             inset: 0,
             zIndex: -2,
             objectFit: "cover",
-            opacity: 0.35,
+            opacity: 0.55,
             pointerEvents: "none",
           }}
         />
@@ -49,7 +49,7 @@ export default function RootLayout({
             position: "fixed",
             inset: 0,
             zIndex: -1,
-            background: "linear-gradient(to bottom, rgba(8,8,15,0.15) 0%, rgba(8,8,15,0.5) 100%)",
+            background: "linear-gradient(to bottom, rgba(8,8,15,0) 0%, rgba(4,20,12,0.4) 50%, rgba(8,8,15,0.7) 100%)",
             pointerEvents: "none",
           }}
         />

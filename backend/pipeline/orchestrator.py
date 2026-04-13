@@ -138,7 +138,6 @@ async def run_auto_edit(
 ) -> None:
     """One-click: analyze all clips → generate AI edit plan → compose & export video."""
     from pipeline.analyze_video import analyze_clip
-    from pipeline.analyze_audio import analyze_clip_audio
     from pipeline.planner import generate_edit_plan
     from pipeline.compose import compose_video
     from pipeline.export import export_final
@@ -147,7 +146,7 @@ async def run_auto_edit(
     if not clips:
         raise RuntimeError("No clips uploaded. Upload at least one clip first.")
 
-    # ── Step 1: Analyze all clips ──
+    # ── Step 1: Analyze all clips (video only — skip heavy Whisper to save RAM) ──
     db.update_project_status(project_id, "analyzing")
     for i, clip in enumerate(clips):
         update_progress(
@@ -155,19 +154,30 @@ async def run_auto_edit(
             (i / len(clips)) * 0.33,
             f"Analyzing clip {i+1}/{len(clips)}...", "auto_edit",
         )
-        video_analysis = await analyze_clip(
-            clip.id, clip.file_path, project_id,
-            progress_callback=lambda msg, _i=i: update_progress(
-                job_id, project_id, (_i / len(clips)) * 0.33,
-                f"Clip {_i+1}: {msg}", "auto_edit"),
-        )
-        audio_analysis = None
-        if clip.audio_path:
-            audio_analysis = await analyze_clip_audio(
-                clip.id, clip.audio_path, video_analysis=video_analysis,
-                whisper_model=settings.WHISPER_MODEL_SIZE,
+        try:
+            video_analysis = await analyze_clip(
+                clip.id, clip.file_path, project_id,
+                progress_callback=lambda msg, _i=i: update_progress(
+                    job_id, project_id, (_i / len(clips)) * 0.33,
+                    f"Clip {_i+1}: {msg}", "auto_edit"),
             )
-        db.save_analysis(clip.id, project_id, video_analysis, audio_analysis)
+        except FileNotFoundError:
+            raise RuntimeError(f"Clip file missing: {clip.filename}. Please re-upload.")
+        except Exception as e:
+            print(f"Analysis failed for clip {clip.id}: {e}")
+            # Create minimal analysis so pipeline can continue
+            from models import VideoAnalysis as VA, SceneSegment as SS, FrameAnalysis as FA
+            video_analysis = VA(
+                clip_id=clip.id,
+                scenes=[SS(start_time=0.0, end_time=clip.duration_seconds or 30.0)],
+                motion_scores=[],
+                frame_analyses=[FA(timestamp=0.0, categories=["IDLE"], excitement=5,
+                                   description="Analysis unavailable", frame_path="")],
+                avg_excitement=5.0,
+                highlight_timestamps=[],
+            )
+        # Skip audio analysis in auto-edit (Whisper is too heavy for free-tier servers)
+        db.save_analysis(clip.id, project_id, video_analysis, None)
 
     # ── Step 2: Generate AI edit plan ──
     update_progress(job_id, project_id, 0.33, "AI is creating your edit plan...", "auto_edit")

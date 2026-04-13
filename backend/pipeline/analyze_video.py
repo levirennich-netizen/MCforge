@@ -14,19 +14,48 @@ from utils.motion_analyzer import analyze_motion
 
 
 def detect_scenes(clip_path: str, threshold: float = 27.0) -> list[SceneSegment]:
-    """Use PySceneDetect to find scene boundaries."""
-    from scenedetect import detect, ContentDetector
+    """Use PySceneDetect to find scene boundaries. Falls back to time-based splitting."""
+    try:
+        from scenedetect import detect, ContentDetector
 
-    scenes = detect(clip_path, ContentDetector(threshold=threshold))
-    return [
-        SceneSegment(
-            start_time=scene[0].get_seconds(),
-            end_time=scene[1].get_seconds(),
-            start_frame=scene[0].frame_num,
-            end_frame=scene[1].frame_num,
-        )
-        for scene in scenes
-    ]
+        scenes = detect(clip_path, ContentDetector(threshold=threshold))
+        return [
+            SceneSegment(
+                start_time=scene[0].get_seconds(),
+                end_time=scene[1].get_seconds(),
+                start_frame=scene[0].frame_num,
+                end_frame=scene[1].frame_num,
+            )
+            for scene in scenes
+        ]
+    except Exception as e:
+        print(f"SceneDetect failed ({e}), falling back to time-based splitting")
+        return _time_based_scenes(clip_path)
+
+
+def _time_based_scenes(clip_path: str, segment_length: float = 10.0) -> list[SceneSegment]:
+    """Simple fallback: split video into fixed-length segments."""
+    try:
+        cap = cv2.VideoCapture(clip_path)
+        if not cap.isOpened():
+            return []
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        cap.release()
+        duration = total_frames / fps if fps > 0 else 0
+    except Exception:
+        duration = 60.0  # Assume 1 min if we can't probe
+
+    if duration <= 0:
+        return []
+
+    scenes = []
+    t = 0.0
+    while t < duration:
+        end = min(t + segment_length, duration)
+        scenes.append(SceneSegment(start_time=t, end_time=end))
+        t = end
+    return scenes
 
 
 def classify_frame_local(frame_path: str, motion_score: float = 0.0) -> dict:
@@ -243,24 +272,35 @@ async def analyze_clip(
     project_id: str,
     progress_callback=None,
 ) -> VideoAnalysis:
-    """Full video analysis for a single clip."""
+    """Full video analysis for a single clip.  Each step is resilient — partial
+    failures produce degraded-but-usable results instead of crashing."""
 
-    # Step 1: Scene detection
+    from pathlib import Path as _Path
+    if not _Path(clip_path).exists():
+        raise FileNotFoundError(f"Clip file not found: {clip_path}")
+
+    # Step 1: Scene detection (with built-in fallback)
     if progress_callback:
         progress_callback("Detecting scenes...")
     scenes = detect_scenes(clip_path)
 
     # If no scenes detected, treat the whole clip as one scene
     if not scenes:
-        from services.ffmpeg_service import probe
-        probe_data = probe(clip_path)
-        duration = float(probe_data.get("format", {}).get("duration", 0))
-        scenes = [SceneSegment(start_time=0.0, end_time=duration)]
+        duration = _get_clip_duration(clip_path)
+        if duration > 0:
+            scenes = [SceneSegment(start_time=0.0, end_time=duration)]
+        else:
+            # Last resort: assume 30s clip
+            scenes = [SceneSegment(start_time=0.0, end_time=30.0)]
 
-    # Step 2: Motion analysis
+    # Step 2: Motion analysis — optional, skip on failure
+    motion_scores = []
     if progress_callback:
         progress_callback("Analyzing motion...")
-    motion_scores = analyze_motion(clip_path)
+    try:
+        motion_scores = analyze_motion(clip_path)
+    except Exception as e:
+        print(f"Motion analysis failed (non-fatal): {e}")
 
     # Build a quick lookup: timestamp -> nearest motion score
     def get_motion_at(ts: float) -> float:
@@ -269,36 +309,46 @@ async def analyze_clip(
         closest = min(motion_scores, key=lambda m: abs(m.timestamp - ts))
         return closest.score
 
-    # Step 3: Extract keyframes (1 per scene, at midpoint)
+    # Step 3: Extract keyframes — optional, skip on failure
     if progress_callback:
         progress_callback("Extracting keyframes...")
     timestamps = [(s.start_time + s.end_time) / 2 for s in scenes]
-    frame_paths = extract_keyframes(clip_path, project_id, clip_id, timestamps)
+    try:
+        frame_paths = extract_keyframes(clip_path, project_id, clip_id, timestamps)
+    except Exception as e:
+        print(f"Frame extraction failed (non-fatal): {e}")
+        frame_paths = []
 
     # Step 4: Frame classification — fast local OpenCV (no slow AI API calls)
     if progress_callback:
         progress_callback("Classifying frames...")
     frame_analyses = []
 
-    for i, (path, ts) in enumerate(zip(frame_paths, timestamps)):
-        try:
-            motion = get_motion_at(ts)
-            result = classify_frame_local(str(path), motion_score=motion)
+    if frame_paths:
+        for path, ts in zip(frame_paths, timestamps):
+            try:
+                motion = get_motion_at(ts)
+                result = classify_frame_local(str(path), motion_score=motion)
+                frame_analyses.append(FrameAnalysis(
+                    timestamp=ts,
+                    categories=result.get("categories", ["IDLE"]),
+                    excitement=result.get("excitement", 5),
+                    description=result.get("description", ""),
+                    frame_path=str(path),
+                ))
+            except Exception as e:
+                frame_analyses.append(FrameAnalysis(
+                    timestamp=ts, categories=["IDLE"], excitement=3,
+                    description=f"Classification error: {e}", frame_path=str(path),
+                ))
 
+    # If we have no frame analyses at all, create basic ones from scenes
+    if not frame_analyses:
+        for i, scene in enumerate(scenes):
+            ts = (scene.start_time + scene.end_time) / 2
             frame_analyses.append(FrameAnalysis(
-                timestamp=ts,
-                categories=result.get("categories", ["IDLE"]),
-                excitement=result.get("excitement", 5),
-                description=result.get("description", ""),
-                frame_path=str(path),
-            ))
-        except Exception as e:
-            frame_analyses.append(FrameAnalysis(
-                timestamp=ts,
-                categories=["IDLE"],
-                excitement=3,
-                description=f"Classification error: {e}",
-                frame_path=str(path),
+                timestamp=ts, categories=["IDLE"], excitement=5,
+                description=f"Scene {i+1}", frame_path="",
             ))
 
     # Compute highlights
@@ -318,3 +368,23 @@ async def analyze_clip(
         avg_excitement=avg_excitement,
         highlight_timestamps=highlight_timestamps,
     )
+
+
+def _get_clip_duration(clip_path: str) -> float:
+    """Get clip duration using ffprobe, falling back to OpenCV."""
+    try:
+        from services.ffmpeg_service import probe
+        probe_data = probe(clip_path)
+        return float(probe_data.get("format", {}).get("duration", 0))
+    except Exception:
+        pass
+    try:
+        cap = cv2.VideoCapture(clip_path)
+        if cap.isOpened():
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            cap.release()
+            return frames / fps if fps > 0 else 0
+    except Exception:
+        pass
+    return 0.0
