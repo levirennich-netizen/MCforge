@@ -39,15 +39,17 @@ export default function ProjectPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [exports, setExports] = useState<ExportRecord[]>([]);
   const [videoPrompt, setVideoPrompt] = useState("");
+  const [loadingClips, setLoadingClips] = useState(true);
+  const [loadingExports, setLoadingExports] = useState(true);
 
   useJobProgress(projectId);
 
   useEffect(() => {
     getProject(projectId).then(setProject).catch(() => { toast.error("Project not found"); router.push("/"); });
-    listClips(projectId).then(setClips).catch(catchToast("Failed to load clips"));
+    listClips(projectId).then(setClips).catch(catchToast("Failed to load clips")).finally(() => setLoadingClips(false));
     getAnalysis(projectId).then(setAnalyses).catch(() => {});
     getHighlights(projectId).then(setHighlights).catch(() => {});
-    listExports(projectId).then(setExports).catch(() => {});
+    listExports(projectId).then(setExports).catch(() => {}).finally(() => setLoadingExports(false));
   }, [projectId]);
 
   const handleUpload = useCallback(async (files: FileList | File[]) => {
@@ -113,6 +115,7 @@ export default function ProjectPage() {
     router.push(`/projects/${projectId}/${key}`);
   };
 
+  // Full-page skeleton while project hasn't loaded
   if (!project) {
     return (
       <PageContainer>
@@ -126,10 +129,14 @@ export default function ProjectPage() {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
             <div className="lg:col-span-2 space-y-3">
+              <Skeleton className="h-32 rounded-xl" />
               <SkeletonClip />
               <SkeletonClip />
             </div>
-            <Skeleton className="h-64 rounded-xl" />
+            <div className="space-y-4">
+              <Skeleton className="h-48 rounded-xl" />
+              <Skeleton className="h-64 rounded-xl" />
+            </div>
           </div>
         </div>
       </PageContainer>
@@ -178,10 +185,15 @@ export default function ProjectPage() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Upload / AI Builder Section */}
+        {/* Left: Clips */}
         <div className="lg:col-span-2">
           {/* Video Player — shows latest export */}
-          {exports.length > 0 && (
+          {loadingExports ? (
+            <div className="mb-6">
+              <Skeleton className="h-5 w-28 mb-3" />
+              <Skeleton className="h-52 rounded-xl" />
+            </div>
+          ) : exports.length > 0 ? (
             <div className="mb-6">
               <h3 className="text-base font-semibold mb-3 text-foreground/80">
                 Your Video
@@ -205,10 +217,10 @@ export default function ProjectPage() {
                 </a>
               </div>
             </div>
-          )}
+          ) : null}
 
           <h3 className="text-base font-semibold mb-4 text-foreground/80">
-            Clips <span className="text-muted/50 font-normal">({clips.length})</span>
+            Clips <span className="text-muted/50 font-normal">({loadingClips ? "..." : clips.length})</span>
           </h3>
 
           <DropZone
@@ -220,16 +232,23 @@ export default function ProjectPage() {
             sublabel="MP4, MOV, MKV, AVI, WebM"
           />
 
-          <div className="space-y-2.5 mt-4">
-            {clips.map((clip, i) => (
-              <div key={clip.id} className="animate-fade-in opacity-0" style={{ animationDelay: `${i * 60}ms` }}>
-                <ClipCard clip={clip} projectId={projectId} />
-              </div>
-            ))}
-          </div>
+          {loadingClips ? (
+            <div className="space-y-2.5 mt-4">
+              <SkeletonClip />
+              <SkeletonClip />
+            </div>
+          ) : (
+            <div className="space-y-2.5 mt-4">
+              {clips.map((clip, i) => (
+                <div key={clip.id} className="animate-fade-in opacity-0" style={{ animationDelay: `${i * 60}ms` }}>
+                  <ClipCard clip={clip} projectId={projectId} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Actions Panel */}
+        {/* Right: Actions Panel */}
         <div className="space-y-4">
           {/* Big Generate Video button + prompt */}
           <Card padding="md" className="!border-emerald-500/30 !bg-emerald-500/5">
@@ -238,11 +257,13 @@ export default function ProjectPage() {
               onChange={(e) => setVideoPrompt(e.target.value)}
               placeholder="Describe your video... e.g. &quot;Epic Minecraft montage with fast cuts and dramatic moments&quot;"
               rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-emerald-500/50 resize-none mb-3"
+              disabled={hasRunningJobs}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 outline-none focus:border-emerald-500/50 resize-none mb-3 disabled:opacity-40"
             />
             <Button
               onClick={handleAutoEdit}
-              disabled={clips.length === 0 || hasRunningJobs}
+              disabled={clips.length === 0 || hasRunningJobs || loadingClips}
+              loading={hasRunningJobs}
               size="lg"
               className="w-full !text-xl !py-5 !from-emerald-500 !to-green-600 hover:!from-emerald-400 hover:!to-green-500 !shadow-[0_4px_16px_rgba(0,0,0,0.4),0_0_30px_rgba(16,185,129,0.3)]"
             >
@@ -254,7 +275,12 @@ export default function ProjectPage() {
           </Card>
 
           {/* Downloads */}
-          {exports.length > 0 && (
+          {loadingExports ? (
+            <Card padding="md">
+              <Skeleton className="h-4 w-24 mb-3" />
+              <Skeleton className="h-10 rounded-lg" />
+            </Card>
+          ) : exports.length > 0 ? (
             <Card padding="md">
               <h3 className="text-sm font-semibold mb-3 text-foreground/80 uppercase tracking-wider">Your Videos</h3>
               <div className="space-y-2">
@@ -271,7 +297,7 @@ export default function ProjectPage() {
                 ))}
               </div>
             </Card>
-          )}
+          ) : null}
 
           <Card padding="md">
             <h3 className="text-sm font-semibold mb-4 text-foreground/80 uppercase tracking-wider">Advanced</h3>
@@ -279,13 +305,15 @@ export default function ProjectPage() {
               <Button
                 onClick={handleAnalyze}
                 disabled={clips.length === 0 || hasRunningJobs}
+                loading={hasRunningJobs && !!Object.values(activeJobs).find((j) => j.stage === "analyze")}
                 className="w-full !from-blue-500 !to-blue-600 hover:!from-blue-400 hover:!to-blue-500 !shadow-[0_1px_2px_rgba(0,0,0,0.3),0_0_12px_rgba(59,130,246,0.15)]"
               >
-                Analyze Clips (AI)
+                Analyze Clips
               </Button>
               <Button
                 onClick={handleGeneratePlan}
                 disabled={hasRunningJobs}
+                loading={hasRunningJobs && !!Object.values(activeJobs).find((j) => j.stage === "plan")}
                 className="w-full !from-purple-500 !to-purple-600 hover:!from-purple-400 hover:!to-purple-500 !shadow-[0_1px_2px_rgba(0,0,0,0.3),0_0_12px_rgba(168,85,247,0.15)]"
               >
                 Generate Edit Plan
