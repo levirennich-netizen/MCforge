@@ -772,6 +772,26 @@ export function MineRunner() {
         addChat("  /craft <item> - Craft an item", "#aaa");
         addChat("  /recipes - Show all recipes", "#aaa");
         addChat("  /inventory - Show your items", "#aaa");
+        addChat("  /nether - Teleport to the Nether", "#aaa");
+        addChat("  /end - Teleport to The End", "#aaa");
+        return;
+      }
+
+      if (cmd === "nether") {
+        const st = stateRef.current;
+        if (st && st.dimension === "overworld") {
+          st.pendingTeleport = "nether";
+          addChat("Teleporting to the Nether...", "#f44");
+        } else { addChat("You're not in the Overworld!", "#f66"); }
+        return;
+      }
+
+      if (cmd === "end") {
+        const st = stateRef.current;
+        if (st && (st.dimension === "overworld" || st.dimension === "nether")) {
+          st.pendingTeleport = "end";
+          addChat("Teleporting to The End...", "#c070ff");
+        } else { addChat("You're already in The End!", "#f66"); }
         return;
       }
 
@@ -841,6 +861,12 @@ export function MineRunner() {
       }
 
       addChat(`Crafted ${recipe.count}x ${ITEM_NAMES[recipe.result]}!`, "#5f5");
+
+      // Diamond pickaxe crafted → trigger Nether teleport
+      if (recipe.result === DIAMOND_PICK && s.dimension === "overworld") {
+        s.pendingTeleport = "nether";
+        addChat("The Nether awaits...", "#f44");
+      }
     } else {
       addChat(`<You> ${trimmed}`, "#ddd");
     }
@@ -864,7 +890,7 @@ export function MineRunner() {
       world, px: spawnX * B + 2, py: spawnY * B,
       vx: 0, vy: 0, onGround: false, camX: 0, camY: 0,
       keys: new Set<string>(), mouseX: -1, mouseY: -1,
-      inventory: new Map<number, number>([[DIRT, 10], [WOOD, 5]]),
+      inventory: new Map<number, number>([[DIRT, 10], [WOOD, 5], [DIAMOND, 5]]),
       hotbar: [DIRT, STONE, WOOD, PLANK, LEAVES, SAND, 0, 0, 0] as number[],
       selected: 0, facing: 1, walkFrame: 0,
       clouds: genClouds(seed), particles: [] as Particle[],
@@ -874,19 +900,27 @@ export function MineRunner() {
       portalAnim: 0, // > 0 means portal animation is playing
       victory: false,
       hasEnteredNether: false,
+      pendingTeleport: "" as "" | "nether" | "end", // set from handleCommand, consumed by update
     };
     stateRef.current = s;
 
     // Teleport to Nether function
     const teleportToNether = () => {
-      s.portalAnim = 60; // 60 frames of portal animation
+      s.portalAnim = 90; // 90 frames of portal animation
       s.dimension = "nether";
       world = genNetherWorld(seed + 777);
       s.world = world;
-      // Find spawn: center of world, on the floor
+      // Find spawn: center of nether cavern FLOOR (skip ceiling, find air gap, then floor)
       const nSpawnX = Math.floor(WW / 2);
-      let nSpawnY = 0;
-      for (let y = 0; y < WH; y++) { if (world[y][nSpawnX] !== AIR) { nSpawnY = y - 2; break; } }
+      let nSpawnY = Math.floor(WH * 0.5); // fallback
+      let passedCeiling = false;
+      for (let y = 0; y < WH; y++) {
+        if (!passedCeiling && world[y][nSpawnX] === AIR) passedCeiling = true;
+        if (passedCeiling && world[y][nSpawnX] !== AIR && world[y][nSpawnX] !== LAVA) {
+          nSpawnY = y - 2;
+          break;
+        }
+      }
       s.px = nSpawnX * B + 2;
       s.py = nSpawnY * B;
       s.vx = 0; s.vy = 0;
@@ -899,13 +933,16 @@ export function MineRunner() {
 
     // Teleport to The End function
     const teleportToEnd = () => {
-      s.portalAnim = 60;
+      s.portalAnim = 90;
       s.dimension = "end";
       world = genEndWorld(seed + 1337);
       s.world = world;
+      // Find spawn: on top of the main end stone island
       const eSpawnX = Math.floor(WW / 2);
-      let eSpawnY = 0;
-      for (let y = 0; y < WH; y++) { if (world[y][eSpawnX] !== AIR) { eSpawnY = y - 2; break; } }
+      let eSpawnY = Math.floor(WH * 0.5); // fallback
+      for (let y = 0; y < WH; y++) {
+        if (world[y][eSpawnX] !== AIR) { eSpawnY = y - 2; break; }
+      }
       s.px = eSpawnX * B + 2;
       s.py = eSpawnY * B;
       s.vx = 0; s.vy = 0;
@@ -918,7 +955,8 @@ export function MineRunner() {
     addChat("Welcome to MineRunner!", "#5f5");
     addChat("Explore biomes: Plains, Cherry, Desert, Snowy, Pale Garden", "#aaa");
     addChat("Type /help for commands, /recipes to craft", "#aaa");
-    addChat("Goal: Craft a Diamond Pickaxe to enter the Nether!", "#ffd700");
+    addChat("Goal: /craft diamond pickaxe to enter the Nether!", "#ffd700");
+    addChat("(You start with 5 diamonds!)", "#4DD5E5");
 
     const solid = (gx: number, gy: number) => {
       if (gx < 0 || gx >= WW || gy >= WH) return true;
@@ -948,7 +986,20 @@ export function MineRunner() {
         return; // Freeze gameplay during portal animation
       }
 
-      // Auto-teleport: detect diamond pickaxe in inventory → go to Nether
+      // Check pendingTeleport flag (set from handleCommand or cheat commands)
+      if (s.pendingTeleport === "nether") {
+        s.pendingTeleport = "";
+        s.hasEnteredNether = true;
+        teleportToNether();
+        return;
+      }
+      if (s.pendingTeleport === "end") {
+        s.pendingTeleport = "";
+        teleportToEnd();
+        return;
+      }
+
+      // Backup auto-teleport: detect diamond pickaxe in inventory → go to Nether
       if (s.dimension === "overworld" && !s.hasEnteredNether && s.inventory.has(DIAMOND_PICK)) {
         s.hasEnteredNether = true;
         teleportToNether();
