@@ -27,6 +27,7 @@ export interface EditSegment {
   sfx: SoundEffect[];
   subtitle_text: string | null;
   speed_factor: number;
+  mute_original_audio: boolean;
 }
 
 export interface EditPlan {

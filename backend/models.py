@@ -211,6 +211,7 @@ class EditSegment(BaseModel):
     sfx: list[SoundEffect] = []
     subtitle_text: Optional[str] = None
     speed_factor: float = 1.0
+    mute_original_audio: bool = False
 
 
 class EditPlan(BaseModel):

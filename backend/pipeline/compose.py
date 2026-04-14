@@ -49,7 +49,8 @@ async def compose_video(
 
         out_path = out_dir / f"seg_{i:03d}.mp4"
         _trim_segment(clip_path, out_path, segment.start_time, segment.end_time,
-                       segment.speed_factor, quality)
+                       segment.speed_factor, quality,
+                       mute_audio=segment.mute_original_audio)
         if out_path.exists():
             trimmed_paths.append(out_path)
 
@@ -104,13 +105,14 @@ def _trim_segment(
     end: float,
     speed: float,
     quality: str,
+    mute_audio: bool = False,
 ) -> None:
-    """Trim a single segment with speed adjustment."""
+    """Trim a single segment with speed adjustment and optional audio muting."""
     # Use fast presets — Render free tier has weak CPU
     q = {"preview": ("28", "ultrafast"), "1080p": ("22", "veryfast"), "4k": ("18", "fast")}
     crf, preset = q.get(quality, q["preview"])
 
-    has_audio = _has_audio(input_path)
+    has_audio = _has_audio(input_path) and not mute_audio
 
     cmd = [
         settings.FFMPEG_PATH, "-y",

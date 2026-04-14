@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
+import { Checkbox } from "@/components/ui/Checkbox";
 import type { EditSegment, TransitionType } from "@/types/timeline";
 
 const TRANSITIONS: { value: TransitionType; label: string }[] = [
@@ -69,6 +70,12 @@ function SegmentProperties({ segment, onUpdate }: SegmentPropertiesProps) {
         value={segment.subtitle_text || ""}
         onChange={(e) => onUpdate({ subtitle_text: e.target.value || null })}
         placeholder="Add subtitle text..."
+      />
+
+      <Checkbox
+        checked={segment.mute_original_audio ?? false}
+        onChange={(v) => onUpdate({ mute_original_audio: v })}
+        label="Mute Original Audio"
       />
     </Card>
   );
