@@ -67,37 +67,158 @@ async def run_generate_image(
     return asset
 
 
+# ── SFX Templates (FFmpeg lavfi audio synthesis) ─────────────────────────
+
+SFX_TEMPLATES: dict[str, dict] = {
+    "explosion": {
+        "keywords": ["explosion", "explode", "tnt", "boom", "blast", "creeper"],
+        "filter": "anoisesrc=d=1.5:c=brown:a=0.9,afade=t=out:st=0.1:d=1.4,lowpass=f=400,volume=2",
+        "label": "Explosion",
+    },
+    "hit": {
+        "keywords": ["hit", "punch", "attack", "sword", "damage", "hurt", "slap", "smack"],
+        "filter": "anoisesrc=d=0.15:c=pink:a=0.8,highpass=f=800,afade=t=out:st=0.02:d=0.13,volume=2",
+        "label": "Hit",
+    },
+    "mining": {
+        "keywords": ["mine", "mining", "dig", "break", "block", "pick", "stone", "crack"],
+        "filter": "anoisesrc=d=0.4:c=white:a=0.5,bandpass=f=2000:w=1000,afade=t=out:st=0.05:d=0.35;anoisesrc=d=0.4:c=white:a=0.5,bandpass=f=3000:w=800,adelay=150|150,afade=t=out:st=0.05:d=0.35",
+        "label": "Mining",
+        "amix": True,
+    },
+    "pickup": {
+        "keywords": ["pickup", "collect", "item", "xp", "orb", "ding", "get", "grab", "coin"],
+        "filter": "sine=f=600:d=0.15,volume=0.5;sine=f=900:d=0.15,adelay=100|100,volume=0.5;sine=f=1200:d=0.2,adelay=200|200,volume=0.4",
+        "label": "Item Pickup",
+        "amix": True,
+    },
+    "footstep": {
+        "keywords": ["footstep", "walk", "step", "running", "run", "feet"],
+        "filter": "anoisesrc=d=0.08:c=brown:a=0.6,highpass=f=200,lowpass=f=2000,afade=t=out:st=0.01:d=0.07;anoisesrc=d=0.08:c=brown:a=0.6,highpass=f=200,lowpass=f=2000,adelay=400|400,afade=t=out:st=0.01:d=0.07;anoisesrc=d=0.08:c=brown:a=0.6,highpass=f=200,lowpass=f=2000,adelay=800|800,afade=t=out:st=0.01:d=0.07;anoisesrc=d=0.08:c=brown:a=0.6,highpass=f=200,lowpass=f=2000,adelay=1200|1200,afade=t=out:st=0.01:d=0.07",
+        "label": "Footsteps",
+        "amix": True,
+    },
+    "water": {
+        "keywords": ["water", "splash", "swim", "ocean", "rain", "drip", "liquid", "river"],
+        "filter": "anoisesrc=d=2:c=pink:a=0.3,lowpass=f=1500,tremolo=f=4:d=0.4,afade=t=in:d=0.3,afade=t=out:st=1.5:d=0.5",
+        "label": "Water",
+    },
+    "fire": {
+        "keywords": ["fire", "lava", "burn", "flame", "blaze", "torch"],
+        "filter": "anoisesrc=d=2:c=brown:a=0.4,bandpass=f=500:w=400,tremolo=f=6:d=0.5,afade=t=in:d=0.2,afade=t=out:st=1.5:d=0.5,volume=1.5",
+        "label": "Fire",
+    },
+    "arrow": {
+        "keywords": ["arrow", "shoot", "bow", "projectile", "whoosh", "swoosh", "throw"],
+        "filter": "sine=f=800:d=0.3,asetrate=44100*0.5,aresample=44100,afade=t=in:d=0.01,afade=t=out:st=0.05:d=0.25,volume=0.6;anoisesrc=d=0.3:c=white:a=0.2,highpass=f=3000,afade=t=out:st=0.05:d=0.25",
+        "label": "Arrow/Swoosh",
+        "amix": True,
+    },
+    "door": {
+        "keywords": ["door", "open", "close", "chest", "creak", "wood"],
+        "filter": "sine=f=200:d=0.4,asetrate=44100*1.3,aresample=44100,volume=0.4;anoisesrc=d=0.3:c=brown:a=0.3,bandpass=f=800:w=500,adelay=50|50,afade=t=out:st=0.05:d=0.25",
+        "label": "Door/Chest",
+        "amix": True,
+    },
+    "ambient": {
+        "keywords": ["ambient", "cave", "wind", "spooky", "atmosphere", "background", "eerie"],
+        "filter": "anoisesrc=d=3:c=brown:a=0.15,lowpass=f=600,tremolo=f=0.5:d=0.3,afade=t=in:d=0.5,afade=t=out:st=2:d=1",
+        "label": "Ambient",
+    },
+    "eat": {
+        "keywords": ["eat", "food", "munch", "chomp", "bite", "drink", "gulp"],
+        "filter": "anoisesrc=d=0.12:c=pink:a=0.5,bandpass=f=1500:w=1000,afade=t=out:st=0.02:d=0.1;anoisesrc=d=0.12:c=pink:a=0.5,bandpass=f=1800:w=1000,adelay=200|200,afade=t=out:st=0.02:d=0.1;anoisesrc=d=0.12:c=pink:a=0.5,bandpass=f=1300:w=1000,adelay=400|400,afade=t=out:st=0.02:d=0.1",
+        "label": "Eating",
+        "amix": True,
+    },
+    "level_up": {
+        "keywords": ["level", "upgrade", "enchant", "power", "achievement", "fanfare", "success", "win"],
+        "filter": "sine=f=400:d=0.2,volume=0.4;sine=f=500:d=0.2,adelay=150|150,volume=0.4;sine=f=600:d=0.2,adelay=300|300,volume=0.4;sine=f=800:d=0.4,adelay=450|450,volume=0.5",
+        "label": "Level Up",
+        "amix": True,
+    },
+}
+
+
+def _match_sfx_template(prompt: str) -> dict:
+    """Match a prompt to the best SFX template using keyword matching."""
+    prompt_lower = prompt.lower()
+    best_match = None
+    best_score = 0
+    for _name, template in SFX_TEMPLATES.items():
+        score = sum(1 for kw in template["keywords"] if kw in prompt_lower)
+        if score > best_score:
+            best_score = score
+            best_match = template
+    # Default to a generic noise burst if nothing matches
+    if not best_match:
+        best_match = {
+            "filter": "anoisesrc=d=1:c=pink:a=0.5,bandpass=f=1000:w=800,afade=t=out:st=0.1:d=0.9,volume=1.5",
+            "label": "Sound Effect",
+            "amix": False,
+        }
+    return best_match
+
+
 async def run_generate_sfx(
     project_id: str, job_id: str, prompt: str,
     voice_id: str = "rex", duration_hint: str = "short"
 ) -> GeneratedAsset:
-    """Generate a sound effect using TTS with the prompt as script."""
-    update_progress(job_id, project_id, 0.2, "Preparing script...", "generate_sfx")
+    """Generate a sound effect using FFmpeg audio synthesis."""
+    update_progress(job_id, project_id, 0.2, "Matching sound type...", "generate_sfx")
 
-    # Use the prompt directly as the TTS script
-    script = prompt
+    template = _match_sfx_template(prompt)
 
-    update_progress(job_id, project_id, 0.4, "Generating audio...", "generate_sfx")
-
-    audio_bytes = await generate_tts(script, voice_id=voice_id)
-
-    update_progress(job_id, project_id, 0.8, "Saving audio...", "generate_sfx")
+    update_progress(job_id, project_id, 0.4, f"Generating {template['label']}...", "generate_sfx")
 
     out_dir = generated_sfx_dir(project_id)
     asset_id = new_id("gen_")
     filename = f"{asset_id}.mp3"
     file_path = out_dir / filename
-    file_path.write_bytes(audio_bytes)
+
+    # Build FFmpeg command for audio synthesis
+    if template.get("amix"):
+        # Multiple audio sources that need mixing
+        parts = template["filter"].split(";")
+        inputs = []
+        for part in parts:
+            inputs.extend(["-f", "lavfi", "-i", part.strip()])
+        n = len(parts)
+        filter_complex = f"amix=inputs={n}:duration=longest"
+        cmd = [
+            settings.FFMPEG_PATH, "-y",
+            *inputs,
+            "-filter_complex", filter_complex,
+            "-c:a", "libmp3lame", "-q:a", "4",
+            str(file_path),
+        ]
+    else:
+        cmd = [
+            settings.FFMPEG_PATH, "-y",
+            "-f", "lavfi", "-i", template["filter"],
+            "-c:a", "libmp3lame", "-q:a", "4",
+            str(file_path),
+        ]
+
+    update_progress(job_id, project_id, 0.6, "Rendering audio...", "generate_sfx")
+
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(f"FFmpeg SFX failed: {proc.stderr[:500]}")
+
+    audio_bytes = file_path.read_bytes()
+
+    update_progress(job_id, project_id, 0.9, "Saving...", "generate_sfx")
 
     asset = GeneratedAsset(
         id=asset_id,
         project_id=project_id,
         asset_type=GenerateAssetType.SFX,
-        name=f"SFX: {prompt[:50]}",
+        name=f"SFX: {template['label']} — {prompt[:40]}",
         prompt=prompt,
         file_path=str(file_path),
         file_size_bytes=len(audio_bytes),
-        metadata_json=json.dumps({"voice_id": voice_id, "script": script, "duration_hint": duration_hint}),
+        metadata_json=json.dumps({"sfx_type": template["label"], "prompt": prompt, "duration_hint": duration_hint}),
     )
     db.create_generated_asset(asset)
 
