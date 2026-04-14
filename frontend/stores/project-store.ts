@@ -13,7 +13,7 @@ interface ProjectStore {
   editPlan: EditPlan | null;
 
   // Jobs
-  activeJobs: Record<string, { status: string; progress: number; message: string; stage: string }>;
+  activeJobs: Record<string, { status: string; progress: number; message: string; stage: string; startedAt: number }>;
 
   // Actions
   setProject: (project: Project | null) => void;
@@ -22,7 +22,7 @@ interface ProjectStore {
   removeClip: (clipId: string) => void;
   setAnalyses: (analyses: AnalysisResult[]) => void;
   setEditPlan: (plan: EditPlan | null) => void;
-  updateJob: (jobId: string, data: { status: string; progress: number; message: string; stage: string }) => void;
+  updateJob: (jobId: string, data: { status: string; progress: number; message: string; stage: string; startedAt?: number }) => void;
   removeJob: (jobId: string) => void;
   clearJobs: () => void;
 }
@@ -41,7 +41,12 @@ export const useProjectStore = create<ProjectStore>((set) => ({
   setAnalyses: (analyses) => set({ analyses }),
   setEditPlan: (editPlan) => set({ editPlan }),
   updateJob: (jobId, data) =>
-    set((s) => ({ activeJobs: { ...s.activeJobs, [jobId]: data } })),
+    set((s) => ({
+      activeJobs: {
+        ...s.activeJobs,
+        [jobId]: { ...data, startedAt: s.activeJobs[jobId]?.startedAt || Date.now() },
+      },
+    })),
   removeJob: (jobId) =>
     set((s) => {
       const { [jobId]: _, ...rest } = s.activeJobs;

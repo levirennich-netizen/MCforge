@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { SelectionCard } from "@/components/ui/SelectionCard";
 import { JobProgressCard } from "@/components/ui/JobProgressCard";
-import { MineRunner } from "@/components/ui/MineRunner";
+import { WaitingScreen } from "@/components/ui/WaitingScreen";
 
 const QUALITIES = [
   { value: "preview", label: "Preview", desc: "720p, fast render" },
@@ -89,19 +89,7 @@ export default function ExportPage() {
             progress={exportJob.progress}
             message={exportJob.message}
           />
-          <div className="text-center space-y-2">
-            <div className="flex items-center justify-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="text-sm font-medium text-foreground/80">
-                This may take a few minutes — please try our MineRunner while you wait!
-              </p>
-              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <p className="text-xs text-muted/60">
-              Use WASD to move, click to mine, type /help for commands
-            </p>
-          </div>
-          <MineRunner />
+          <WaitingScreen startedAt={exportJob.startedAt} />
         </div>
       )}
 

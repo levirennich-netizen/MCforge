@@ -16,7 +16,7 @@ import { SfxGeneratorForm } from "@/components/generate/SfxGeneratorForm";
 import { IntroGeneratorForm } from "@/components/generate/IntroGeneratorForm";
 import { VideoGeneratorForm } from "@/components/generate/VideoGeneratorForm";
 import { AssetGrid } from "@/components/generate/AssetGrid";
-import { MineRunner } from "@/components/ui/MineRunner";
+import { WaitingScreen } from "@/components/ui/WaitingScreen";
 
 const TABS = [
   { key: "video", label: "Videos" },
@@ -126,21 +126,10 @@ export default function GeneratePage() {
 
       {/* MineRunner loading section */}
       {(isLoading || waitingForGame) && (
-        <div className="mb-8 space-y-4">
-          <div className="text-center space-y-2">
-            <div className="flex items-center justify-center gap-2">
-              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="text-sm font-medium text-foreground/80">
-                This may take a few minutes — please try our MineRunner while you wait!
-              </p>
-              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <p className="text-xs text-muted/60">
-              Use WASD to move, click to mine, type /help for commands
-            </p>
-          </div>
-          <MineRunner />
-        </div>
+        <WaitingScreen
+          startedAt={activeGenJob ? activeGenJob[1]?.startedAt : Date.now()}
+          onDismiss={() => setWaitingForGame(false)}
+        />
       )}
 
       {/* Asset Grid */}
