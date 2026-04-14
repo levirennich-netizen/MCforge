@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { SelectionCard } from "@/components/ui/SelectionCard";
 import { JobProgressCard } from "@/components/ui/JobProgressCard";
+import { MineRunner } from "@/components/ui/MineRunner";
 
 const QUALITIES = [
   { value: "preview", label: "Preview", desc: "720p, fast render" },
@@ -43,8 +44,21 @@ export default function ExportPage() {
 
   useEffect(() => {
     if (exportJob?.status === "completed") {
-      listExports(projectId).then(setExports).catch(() => {});
-      toast.success("Export complete!");
+      listExports(projectId).then((data) => {
+        setExports(data);
+        // Auto-download the latest export
+        if (data.length > 0) {
+          const latest = data[0];
+          const url = getExportDownloadUrl(projectId, latest.id);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      }).catch(() => {});
+      toast.success("Export complete! Downloading...");
     }
   }, [exportJob?.status]);
 
@@ -66,15 +80,28 @@ export default function ExportPage() {
     <PageContainer size="sm">
       <PageHeader title="Export Video" backHref={`/projects/${projectId}`} />
 
-      {/* Progress */}
+      {/* Progress + MineRunner */}
       {exportJob?.status === "running" && (
-        <div className="mb-6">
+        <div className="mb-6 space-y-4">
           <JobProgressCard
             stage={exportJob.stage}
             status={exportJob.status}
             progress={exportJob.progress}
             message={exportJob.message}
           />
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-sm font-medium text-foreground/80">
+                This may take a few minutes — please try our MineRunner while you wait!
+              </p>
+              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <p className="text-xs text-muted/60">
+              Use WASD to move, click to mine, type /help for commands
+            </p>
+          </div>
+          <MineRunner />
         </div>
       )}
 
