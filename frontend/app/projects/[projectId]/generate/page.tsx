@@ -16,6 +16,7 @@ import { SfxGeneratorForm } from "@/components/generate/SfxGeneratorForm";
 import { IntroGeneratorForm } from "@/components/generate/IntroGeneratorForm";
 import { VideoGeneratorForm } from "@/components/generate/VideoGeneratorForm";
 import { AssetGrid } from "@/components/generate/AssetGrid";
+import { MineRunner } from "@/components/ui/MineRunner";
 
 const TABS = [
   { key: "video", label: "Videos" },
@@ -45,6 +46,7 @@ export default function GeneratePage() {
 
   const [activeTab, setActiveTab] = useState("video");
   const [assets, setAssets] = useState<GeneratedAsset[]>([]);
+  const [waitingForGame, setWaitingForGame] = useState(false);
 
   useJobProgress(projectId);
 
@@ -68,7 +70,10 @@ export default function GeneratePage() {
     const completed = generateJobs.some(([, j]) => j.status === "completed");
     if (completed) {
       loadAssets();
+      setWaitingForGame(false);
     }
+    const failed = generateJobs.some(([, j]) => j.status === "failed");
+    if (failed) setWaitingForGame(false);
   }, [generateJobs.map(([, j]) => j.status).join(",")]);
 
   const currentJobStage = JOB_STAGE_FOR_TAB[activeTab];
@@ -106,18 +111,37 @@ export default function GeneratePage() {
       {/* Generator Form */}
       <div className="mb-8">
         {activeTab === "video" && (
-          <VideoGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
+          <VideoGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => setWaitingForGame(true)} />
         )}
         {activeTab === "image" && (
-          <ImageGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
+          <ImageGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => setWaitingForGame(true)} />
         )}
         {activeTab === "sfx" && (
-          <SfxGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
+          <SfxGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => setWaitingForGame(true)} />
         )}
         {activeTab === "animated_intro" && (
-          <IntroGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => {}} />
+          <IntroGeneratorForm projectId={projectId} loading={isLoading} onSubmit={() => setWaitingForGame(true)} />
         )}
       </div>
+
+      {/* MineRunner loading section */}
+      {(isLoading || waitingForGame) && (
+        <div className="mb-8 space-y-4">
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-sm font-medium text-foreground/80">
+                This may take a few minutes — please try our MineRunner while you wait!
+              </p>
+              <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <p className="text-xs text-muted/60">
+              Use WASD to move, click to mine, type /help for commands
+            </p>
+          </div>
+          <MineRunner />
+        </div>
+      )}
 
       {/* Asset Grid */}
       <div>
